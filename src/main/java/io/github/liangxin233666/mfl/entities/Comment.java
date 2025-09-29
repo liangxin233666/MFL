@@ -6,6 +6,9 @@ import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 import java.time.OffsetDateTime;
+import java.util.Set;
+import java.util.HashSet;
+import jakarta.persistence.CascadeType;
 
 @Entity
 @Table(name = "comments")
@@ -34,4 +37,14 @@ public class Comment {
     @UpdateTimestamp
     @Column(nullable = false, columnDefinition = "TIMESTAMPTZ")
     private OffsetDateTime updatedAt;
+
+
+    // 父评论 (一个回复只有一个父)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_id")
+    private Comment parent;
+
+    // 子评论列表/回复列表 (一个评论可以有多个回复)
+    @OneToMany(mappedBy = "parent", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
+    private Set<Comment> replies = new HashSet<>();
 }
