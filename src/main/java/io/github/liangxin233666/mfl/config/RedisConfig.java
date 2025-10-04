@@ -13,6 +13,9 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializationContext;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
 
 import java.time.Duration;
 
@@ -25,9 +28,9 @@ public class RedisConfig {
         PolymorphicTypeValidator ptv = BasicPolymorphicTypeValidator.builder()
 
                 .allowIfSubType("io.github.liangxin233666.mfl.")
-
+                .allowIfSubType(SimpleGrantedAuthority.class)
                 .allowIfSubType("java.util.")
-
+                .allowIfBaseType(UserDetails.class)
                 .allowIfSubType("java.time.")
                 .build();
 
@@ -36,7 +39,7 @@ public class RedisConfig {
         objectMapper.registerModule(new JavaTimeModule());
 
         objectMapper.activateDefaultTyping(ptv, ObjectMapper.DefaultTyping.EVERYTHING, JsonTypeInfo.As.PROPERTY);
-
+        objectMapper.addMixIn(User.class, UserMixin.class);
         return objectMapper;
     }
 
@@ -48,7 +51,7 @@ public class RedisConfig {
         return RedisCacheConfiguration.defaultCacheConfig()
                 .serializeKeysWith(RedisSerializationContext.SerializationPair.fromSerializer(new StringRedisSerializer()))
                 .serializeValuesWith(RedisSerializationContext.SerializationPair.fromSerializer(jacksonSerializer))
-                .entryTtl(Duration.ofHours(2));
+                .entryTtl(Duration.ofHours(1));
     }
 
     @Bean

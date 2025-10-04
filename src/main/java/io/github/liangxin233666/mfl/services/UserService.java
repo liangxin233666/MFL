@@ -7,6 +7,8 @@ import io.github.liangxin233666.mfl.entities.User;
 import io.github.liangxin233666.mfl.exceptions.ResourceNotFoundException;
 import io.github.liangxin233666.mfl.repositories.UserRepository;
 import jakarta.validation.Valid;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -78,6 +80,7 @@ public class UserService {
         return new UserResponse(userDto);
     }
 
+    @Cacheable(value = "users-current", key = "#currentUserDetails.username")
     public UserResponse getCurrentUser( UserDetails currentUserDetails) {
 
         Long currentUserId = Long.valueOf(currentUserDetails.getUsername());
@@ -91,9 +94,9 @@ public class UserService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = {"profiles", "user-details", "users-current"}, key = "#currentUserDetails.username")
     public UserResponse updateCurrentUser(@Valid UpdateUserRequest request, UserDetails currentUserDetails) {
-        Long currentUserId = Long.valueOf(currentUserDetails.getUsername());
-        User userToUpdate = findUserById(currentUserId);
+        User userToUpdate = findUserById(Long.valueOf(currentUserDetails.getUsername()));
 
         UpdateUserRequest.UserDto updates = request.user();
 

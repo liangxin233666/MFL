@@ -4,6 +4,7 @@ import io.github.liangxin233666.mfl.dtos.ProfileResponse;
 import io.github.liangxin233666.mfl.entities.User;
 import io.github.liangxin233666.mfl.exceptions.ResourceNotFoundException;
 import io.github.liangxin233666.mfl.repositories.UserRepository;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
@@ -19,6 +20,7 @@ public class ProfileService {
         this.userRepository = userRepository;
     }
 
+    @Cacheable(value = "profiles", key = "#username")
     @Transactional(readOnly = true)
     public ProfileResponse getProfile(String username, UserDetails currentUserDetails) {
         User userToFind = findUserByUsername(username);
