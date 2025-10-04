@@ -1,16 +1,19 @@
 package io.github.liangxin233666.mfl.services;
 
 import com.github.slugify.Slugify;
-import io.github.liangxin233666.mfl.dtos.ArticleResponse;
-import io.github.liangxin233666.mfl.dtos.NewArticleRequest;
-import io.github.liangxin233666.mfl.dtos.ProfileResponse;
-import io.github.liangxin233666.mfl.dtos.UpdateArticleRequest;
+import io.github.liangxin233666.mfl.dtos.*;
 import io.github.liangxin233666.mfl.entities.Article;
 import io.github.liangxin233666.mfl.entities.Tag;
 import io.github.liangxin233666.mfl.entities.User;
+import io.github.liangxin233666.mfl.exceptions.ResourceNotFoundException;
 import io.github.liangxin233666.mfl.repositories.ArticleRepository;
 import io.github.liangxin233666.mfl.repositories.TagRepository;
 import io.github.liangxin233666.mfl.repositories.UserRepository;
+import jakarta.persistence.criteria.Join;
+import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
@@ -37,7 +40,7 @@ public class ArticleService {
     }
 
     @Transactional
-    public ArticleResponse createArticle(NewArticleRequest request, UserDetails currentUserDetails) {
+    public ArticleResponse createArticle(@Valid NewArticleRequest request, UserDetails currentUserDetails) {
 
         User author = findUserById(Long.valueOf(currentUserDetails.getUsername()));
 
@@ -137,7 +140,7 @@ public class ArticleService {
     }
 
     private User findUserById(Long id) {
-        return userRepository.findById(id).orElseThrow(() -> new UsernameNotFoundException("User not found for id: " + id));
+        return userRepository.findById(id).orElseThrow(() -> new  ResourceNotFoundException("User not found for id: " + id));
     }
 
     @Transactional
@@ -177,7 +180,7 @@ public class ArticleService {
 
     private Article findArticleBySlug(String slug) {
         return articleRepository.findBySlug(slug)
-                .orElseThrow(() -> new RuntimeException("Article not found with slug: " + slug));
+                .orElseThrow(() -> new ResourceNotFoundException("Article not found with slug: " + slug));
     }
 
 
@@ -193,7 +196,7 @@ public class ArticleService {
     }
 
     @Transactional
-    public ArticleResponse updateArticle(String slug, UpdateArticleRequest request, UserDetails currentUserDetails) {
+    public ArticleResponse updateArticle(String slug, @Valid UpdateArticleRequest request, UserDetails currentUserDetails) {
         Article article = findArticleBySlug(slug);
         User currentUser = findUserById(Long.valueOf(currentUserDetails.getUsername()));
 
@@ -218,6 +221,80 @@ public class ArticleService {
 
         Article updatedArticle = articleRepository.save(article);
         return buildArticleResponse(updatedArticle, currentUser);
+    }
+
+    @Transactional(readOnly = true)
+    public MultipleArticlesResponse getArticles(String tag, String author, String favoritedBy, Pageable pageable, UserDetails currentUserDetails) {
+
+        // 1. 构建动态查询条件 (Specification)
+        Specification<Article> spec = (root, query, criteriaBuilder) -> criteriaBuilder.conjunction();
+
+        if (tag != null && !tag.isBlank()) {
+            spec = spec.and(hasTag(tag));
+        }
+        if (author != null && !author.isBlank()) {
+            spec = spec.and(byAuthor(author));
+        }
+        if (favoritedBy != null && !favoritedBy.isBlank()) {
+            spec = spec.and(favoritedBy(favoritedBy));
+        }
+
+
+        Page<Article> articlePage = articleRepository.findAll(spec, pageable);
+
+
+        User currentUser = (currentUserDetails != null)
+                ? findUserById(Long.valueOf(currentUserDetails.getUsername()))
+                : null;
+
+        List<ArticleResponse.ArticleDto> articleDtos = articlePage.getContent().stream()
+                .map(article -> buildArticleResponse(article, currentUser).article())
+                .collect(Collectors.toList());
+
+        return new MultipleArticlesResponse(articleDtos, articlePage.getTotalElements());
+    }
+
+    @Transactional(readOnly = true)
+    public MultipleArticlesResponse getFeedArticles(Pageable pageable, UserDetails currentUserDetails) {
+        User currentUser = findUserById(Long.valueOf(currentUserDetails.getUsername()));
+
+        List<User> followedUsers = List.copyOf(currentUser.getFollowing());
+        if (followedUsers.isEmpty()) {
+            // 如果没有关注任何人，直接返回空
+            return new MultipleArticlesResponse(List.of(), 0);
+        }
+
+        Page<Article> articlePage = articleRepository.findByAuthorInOrderByCreatedAtDesc(followedUsers, pageable);
+
+        List<ArticleResponse.ArticleDto> articleDtos = articlePage.getContent().stream()
+                .map(article -> buildArticleResponse(article, currentUser).article())
+                .collect(Collectors.toList());
+
+        return new MultipleArticlesResponse(articleDtos, articlePage.getTotalElements());
+    }
+
+    private Specification<Article> hasTag(String tagName) {
+        return (root, query, criteriaBuilder) -> {
+            Join<Article, Tag> tagJoin = root.join("tags");
+            return criteriaBuilder.equal(tagJoin.get("name"), tagName);
+        };
+    }
+
+    private Specification<Article> byAuthor(String username) {
+        return (root, query, criteriaBuilder) -> {
+            Join<Article, User> authorJoin = root.join("author");
+            return criteriaBuilder.equal(authorJoin.get("username"), username);
+        };
+    }
+
+    private Specification<Article> favoritedBy(String username) {
+        return (root, query, criteriaBuilder) -> {
+
+            User user = userRepository.findByUsername(username)
+                    .orElseThrow(() -> new  ResourceNotFoundException("User not found: " + username));
+            Join<Article, User> favoritedByJoin = root.join("favoritedBy");
+            return criteriaBuilder.equal(favoritedByJoin.get("id"), user.getId());
+        };
     }
 
 

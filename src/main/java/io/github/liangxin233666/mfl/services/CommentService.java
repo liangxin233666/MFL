@@ -7,9 +7,11 @@ import io.github.liangxin233666.mfl.dtos.ProfileResponse;
 import io.github.liangxin233666.mfl.entities.Article;
 import io.github.liangxin233666.mfl.entities.Comment;
 import io.github.liangxin233666.mfl.entities.User;
+import io.github.liangxin233666.mfl.exceptions.ResourceNotFoundException;
 import io.github.liangxin233666.mfl.repositories.ArticleRepository;
 import io.github.liangxin233666.mfl.repositories.CommentRepository;
 import io.github.liangxin233666.mfl.repositories.UserRepository;
+import jakarta.validation.Valid;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -32,7 +34,7 @@ public class CommentService {
     }
 
     @Transactional
-    public CommentResponse addComment(String slug, NewCommentRequest request, UserDetails currentUserDetails) {
+    public CommentResponse addComment(String slug, @Valid NewCommentRequest request, UserDetails currentUserDetails) {
         Article article = findArticleBySlug(slug);
         User author = findUserById(Long.valueOf(currentUserDetails.getUsername()));
 
@@ -64,7 +66,7 @@ public class CommentService {
     @Transactional
     public void deleteComment(String slug, Long commentId, UserDetails currentUserDetails) {
         Comment comment = commentRepository.findById(commentId)
-                .orElseThrow(() -> new RuntimeException("Comment not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Comment not found"));
         User currentUser = findUserById(Long.valueOf(currentUserDetails.getUsername()));
 
         // ** 权限校验 **
@@ -109,15 +111,15 @@ public class CommentService {
 
     private Article findArticleBySlug(String slug) {
         return articleRepository.findBySlug(slug)
-                .orElseThrow(() -> new RuntimeException("Article not found with slug: " + slug));
+                .orElseThrow(() -> new  ResourceNotFoundException("Article not found with slug: " + slug));
     }
 
     private User findUserById(Long id) {
-        return userRepository.findById(id).orElseThrow(() -> new UsernameNotFoundException("User not found for id: " + id));
+        return userRepository.findById(id).orElseThrow(() -> new  ResourceNotFoundException("User not found for id: " + id));
     }
 
     @Transactional
-    public CommentResponse addReply(String slug, Long parentCommentId, NewCommentRequest request, UserDetails currentUserDetails) {
+    public CommentResponse addReply(String slug, Long parentCommentId, @Valid NewCommentRequest request, UserDetails currentUserDetails) {
         Article article = findArticleBySlug(slug);
         User currentUser = (currentUserDetails != null)
                 ? findUserById(Long.valueOf(currentUserDetails.getUsername()))
@@ -127,7 +129,7 @@ public class CommentService {
 
         // 找到被回复的父评论
         Comment parentComment = commentRepository.findById(parentCommentId)
-                .orElseThrow(() -> new RuntimeException("Parent comment not found"));
+                .orElseThrow(() -> new  ResourceNotFoundException("Parent comment not found"));
 
         Comment reply = new Comment();
         reply.setBody(request.comment().body());
@@ -139,5 +141,7 @@ public class CommentService {
 
         // 返回新创建的回复
         return new CommentResponse(buildCommentDto(savedReply, currentUser));
+
+
     }
 }

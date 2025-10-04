@@ -2,6 +2,7 @@ package io.github.liangxin233666.mfl.services;
 
 import io.github.liangxin233666.mfl.dtos.ProfileResponse;
 import io.github.liangxin233666.mfl.entities.User;
+import io.github.liangxin233666.mfl.exceptions.ResourceNotFoundException;
 import io.github.liangxin233666.mfl.repositories.UserRepository;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -59,12 +60,12 @@ public class ProfileService {
 
     private User findUserByUsername(String username) {
         return userRepository.findByUsername(username)
-                .orElseThrow(() -> new UsernameNotFoundException("Profile not found for username: " + username));
+                .orElseThrow(() -> new ResourceNotFoundException("Profile not found for username: " + username));
     }
 
     private User findUserById(Long id) {
         return userRepository.findById(id)
-                .orElseThrow(() -> new UsernameNotFoundException("User not found for id: " + id));
+                .orElseThrow(() -> new  ResourceNotFoundException("User not found for id: " + id));
     }
 
     private ProfileResponse buildProfileResponse(User user, boolean following) {

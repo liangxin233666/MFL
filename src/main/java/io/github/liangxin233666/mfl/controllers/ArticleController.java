@@ -1,9 +1,13 @@
 package io.github.liangxin233666.mfl.controllers;
 
 import io.github.liangxin233666.mfl.dtos.ArticleResponse;
+import io.github.liangxin233666.mfl.dtos.MultipleArticlesResponse;
 import io.github.liangxin233666.mfl.dtos.NewArticleRequest;
 import io.github.liangxin233666.mfl.dtos.UpdateArticleRequest;
 import io.github.liangxin233666.mfl.services.ArticleService;
+import jakarta.validation.Valid;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -22,7 +26,7 @@ public class ArticleController {
 
     @PostMapping
     public ResponseEntity<ArticleResponse> createArticle(
-            @RequestBody NewArticleRequest request,
+            @Valid @RequestBody NewArticleRequest request,
             @AuthenticationPrincipal UserDetails currentUser) {
         ArticleResponse articleResponse = articleService.createArticle(request, currentUser);
         return ResponseEntity.status(HttpStatus.CREATED).body(articleResponse);
@@ -39,7 +43,7 @@ public class ArticleController {
     @PutMapping("/{slug}")
     public ResponseEntity<ArticleResponse> updateArticle(
             @PathVariable String slug,
-            @RequestBody UpdateArticleRequest request,
+            @Valid @RequestBody UpdateArticleRequest request,
             @AuthenticationPrincipal UserDetails currentUser) {
         ArticleResponse articleResponse = articleService.updateArticle(slug, request, currentUser);
         return ResponseEntity.ok(articleResponse);
@@ -69,4 +73,25 @@ public class ArticleController {
         return ResponseEntity.ok(articleResponse);
     }
 
+    @GetMapping
+    public ResponseEntity<MultipleArticlesResponse> getArticles(
+            @RequestParam(name = "tag", required = false) String tag,
+
+            @RequestParam(name = "author", required = false) String author,
+
+            @RequestParam(name = "favoritedBy", required = false) String favoritedBy,
+            @PageableDefault(size = 20) Pageable pageable,
+            @AuthenticationPrincipal UserDetails currentUser) {
+
+        MultipleArticlesResponse response = articleService.getArticles(tag, author, favoritedBy, pageable, currentUser);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/feed")
+    public ResponseEntity<MultipleArticlesResponse> getFeedArticles(
+            @PageableDefault(size = 20) Pageable pageable,
+            @AuthenticationPrincipal UserDetails currentUser) {
+        MultipleArticlesResponse response = articleService.getFeedArticles(pageable, currentUser);
+        return ResponseEntity.ok(response);
+    }
 }

@@ -1,5 +1,6 @@
 package io.github.liangxin233666.mfl.services;
 
+import io.github.liangxin233666.mfl.exceptions.ResourceNotFoundException;
 import io.github.liangxin233666.mfl.repositories.UserRepository;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -19,7 +20,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
     }
 
     @Override
-    public UserDetails loadUserByUsername(String userId) throws UsernameNotFoundException {
+    public UserDetails loadUserByUsername(String userId) throws ResourceNotFoundException {
         // 我们用 userRepository 来根据ID查找用户
         return userRepository.findById(Long.valueOf(userId))
                 .map(user -> new User(
@@ -27,6 +28,6 @@ public class UserDetailsServiceImpl implements UserDetailsService {
                         user.getPassword(),
                         Collections.emptyList()
                 ))
-                .orElseThrow(() -> new UsernameNotFoundException("User not found with id: " + userId));
+                .orElseThrow(() -> new  ResourceNotFoundException("User not found with id: " + userId));
     }
 }

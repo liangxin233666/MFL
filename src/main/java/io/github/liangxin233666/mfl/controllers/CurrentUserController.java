@@ -1,13 +1,13 @@
 package io.github.liangxin233666.mfl.controllers;
 
+import io.github.liangxin233666.mfl.dtos.UpdateUserRequest;
 import io.github.liangxin233666.mfl.dtos.UserResponse;
 import io.github.liangxin233666.mfl.services.UserService;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.User;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/user")
@@ -21,10 +21,18 @@ public class CurrentUserController {
 
     @GetMapping
     public ResponseEntity<UserResponse> getCurrentUser(
-
             @AuthenticationPrincipal User currentUser
-    ) {
+    )
+    {
         UserResponse userResponse = userService.getCurrentUser(currentUser);
+        return ResponseEntity.ok(userResponse);
+    }
+
+    @PutMapping
+    public ResponseEntity<UserResponse> updateCurrentUser(
+            @Valid @RequestBody UpdateUserRequest request,
+            @AuthenticationPrincipal User currentUser) {
+        UserResponse userResponse = userService.updateCurrentUser(request, currentUser);
         return ResponseEntity.ok(userResponse);
     }
 }

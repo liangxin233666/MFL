@@ -4,6 +4,8 @@ import io.github.liangxin233666.mfl.dtos.CommentResponse;
 import io.github.liangxin233666.mfl.dtos.MultipleCommentsResponse;
 import io.github.liangxin233666.mfl.dtos.NewCommentRequest;
 import io.github.liangxin233666.mfl.services.CommentService;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -23,7 +25,7 @@ public class CommentController {
     @PostMapping
     public ResponseEntity<CommentResponse> addComment(
             @PathVariable String slug,
-            @RequestBody NewCommentRequest request,
+            @Valid @RequestBody NewCommentRequest request,
             @AuthenticationPrincipal UserDetails currentUser) {
         CommentResponse commentResponse = commentService.addComment(slug, request, currentUser);
         return ResponseEntity.ok(commentResponse);
@@ -37,12 +39,12 @@ public class CommentController {
         return ResponseEntity.ok(comments);
     }
 
-    @DeleteMapping("/{id}")
+    @DeleteMapping("/{commentId}")
     public ResponseEntity<Void> deleteComment(
             @PathVariable String slug,
-            @PathVariable Long id,
+            @PathVariable Long commentId,
             @AuthenticationPrincipal UserDetails currentUser) {
-        commentService.deleteComment(slug, id, currentUser);
+        commentService.deleteComment(slug, commentId, currentUser);
         return ResponseEntity.noContent().build();
     }
 
@@ -51,7 +53,7 @@ public class CommentController {
     public ResponseEntity<CommentResponse> addReplyToComment(
             @PathVariable String slug,
             @PathVariable Long commentId, // 被回复的评论ID
-            @RequestBody NewCommentRequest request,
+            @Valid @RequestBody NewCommentRequest request,
             @AuthenticationPrincipal UserDetails currentUser) {
         CommentResponse replyResponse = commentService.addReply(slug, commentId, request, currentUser);
         return ResponseEntity.ok(replyResponse);
