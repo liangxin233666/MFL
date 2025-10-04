@@ -78,11 +78,11 @@ public class UserService {
         return new UserResponse(userDto);
     }
 
-    public UserResponse getCurrentUser(org.springframework.security.core.userdetails.User currentUser) {
+    public UserResponse getCurrentUser( UserDetails currentUserDetails) {
 
-        Long userId = Long.valueOf(currentUser.getUsername());
+        Long currentUserId = Long.valueOf(currentUserDetails.getUsername());
 
-        User user = userRepository.findById(userId)
+        User user = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         String token = jwtService.generateToken(user);
@@ -97,7 +97,6 @@ public class UserService {
 
         UpdateUserRequest.UserDto updates = request.user();
 
-
         if (updates.email() != null) {
 
             if (!updates.email().equals(userToUpdate.getEmail()) && userRepository.findByEmail(updates.email()).isPresent()) {
@@ -106,10 +105,8 @@ public class UserService {
             userToUpdate.setEmail(updates.email());
         }
 
-        // 2. 处理 Username 更新 - 这就是您问题的核心
         if (updates.username() != null) {
             String newUsername = updates.username();
-
 
             if (!newUsername.equals(userToUpdate.getUsername()) && userRepository.findByUsername(newUsername).isPresent()) {
                 throw new IllegalArgumentException("Username already in use");
@@ -117,12 +114,10 @@ public class UserService {
             userToUpdate.setUsername(newUsername);
         }
 
-
         if (updates.password() != null) {
 
             userToUpdate.setPassword(passwordEncoder.encode(updates.password()));
         }
-
 
         if (updates.bio() != null) {
             userToUpdate.setBio(updates.bio());
@@ -132,7 +127,7 @@ public class UserService {
         }
 
         User savedUser = userRepository.save(userToUpdate);
-        String token = jwtService.generateToken(savedUser); // 更新后可以颁发一个新 token
+        String token = jwtService.generateToken(savedUser); // 更新后颁发一个新 token
         return buildUserResponse(savedUser, token);
     }
 

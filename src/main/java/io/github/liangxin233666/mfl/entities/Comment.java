@@ -3,6 +3,7 @@ package io.github.liangxin233666.mfl.entities;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 import java.time.OffsetDateTime;
@@ -14,6 +15,7 @@ import jakarta.persistence.CascadeType;
 @Table(name = "comments")
 @Getter
 @Setter
+@BatchSize(size = 100)
 public class Comment {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -46,5 +48,6 @@ public class Comment {
 
     // 子评论列表/回复列表 (一个评论可以有多个回复)
     @OneToMany(mappedBy = "parent", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
+    @BatchSize(size = 25)
     private Set<Comment> replies = new HashSet<>();
 }

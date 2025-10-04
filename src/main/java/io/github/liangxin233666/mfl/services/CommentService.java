@@ -12,6 +12,8 @@ import io.github.liangxin233666.mfl.repositories.ArticleRepository;
 import io.github.liangxin233666.mfl.repositories.CommentRepository;
 import io.github.liangxin233666.mfl.repositories.UserRepository;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -48,19 +50,19 @@ public class CommentService {
     }
 
     @Transactional(readOnly = true)
-    public MultipleCommentsResponse getCommentsBySlug(String slug, UserDetails currentUserDetails) {
+    public MultipleCommentsResponse getCommentsBySlug(String slug, Pageable pageable, UserDetails currentUserDetails) {
         Article article = findArticleBySlug(slug);
         User currentUser = (currentUserDetails != null)
                 ? findUserById(Long.valueOf(currentUserDetails.getUsername()))
                 : null;
 
-        // 核心改动：只查找顶层评论 (parent_id IS NULL)
-        List<CommentResponse.CommentDto> topLevelCommentDtos = article.getComments().stream()
-                .filter(comment -> comment.getParent() == null) // 筛选出顶层评论
-                .map(comment -> buildCommentDto(comment, currentUser)) // 递归构建 DTO
+        Page<Comment> commentPage = commentRepository.findByArticleAndParentIsNull(article, pageable);
+
+        List<CommentResponse.CommentDto> commentDtos = commentPage.getContent().stream()
+                .map(comment -> buildCommentDto(comment, currentUser))
                 .collect(Collectors.toList());
 
-        return new MultipleCommentsResponse(topLevelCommentDtos);
+        return new MultipleCommentsResponse(commentDtos);
     }
 
     @Transactional
@@ -69,7 +71,7 @@ public class CommentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Comment not found"));
         User currentUser = findUserById(Long.valueOf(currentUserDetails.getUsername()));
 
-        // ** 权限校验 **
+        // 权限校验
         if (!comment.getAuthor().equals(currentUser)) {
             throw new AccessDeniedException("You are not the author of this comment.");
         }
@@ -125,7 +127,7 @@ public class CommentService {
                 ? findUserById(Long.valueOf(currentUserDetails.getUsername()))
                 : null;
 
-        User author = findUserById(Long.valueOf(currentUserDetails.getUsername()));
+
 
         // 找到被回复的父评论
         Comment parentComment = commentRepository.findById(parentCommentId)
@@ -134,7 +136,7 @@ public class CommentService {
         Comment reply = new Comment();
         reply.setBody(request.comment().body());
         reply.setArticle(article);
-        reply.setAuthor(author);
+        reply.setAuthor(currentUser);
         reply.setParent(parentComment); //设置父子关系 **
 
         Comment savedReply = commentRepository.save(reply);

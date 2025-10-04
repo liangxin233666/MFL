@@ -6,6 +6,8 @@ import io.github.liangxin233666.mfl.dtos.NewCommentRequest;
 import io.github.liangxin233666.mfl.services.CommentService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -34,8 +36,9 @@ public class CommentController {
     @GetMapping
     public ResponseEntity<MultipleCommentsResponse> getComments(
             @PathVariable String slug,
+            @PageableDefault(size = 10, sort = "createdAt") Pageable pageable,
             @AuthenticationPrincipal UserDetails currentUser) {
-        MultipleCommentsResponse comments = commentService.getCommentsBySlug(slug, currentUser);
+        MultipleCommentsResponse comments = commentService.getCommentsBySlug(slug,pageable, currentUser);
         return ResponseEntity.ok(comments);
     }
 

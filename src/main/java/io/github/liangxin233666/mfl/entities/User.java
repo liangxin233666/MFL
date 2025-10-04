@@ -3,12 +3,14 @@ package io.github.liangxin233666.mfl.entities;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 import java.time.OffsetDateTime;
 import java.util.HashSet;
 import java.util.Set;
 
+@BatchSize(size = 25)
 @Entity
 @Table(name = "users")
 @Getter

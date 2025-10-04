@@ -4,6 +4,7 @@ import io.github.liangxin233666.mfl.entities.Article;
 import io.github.liangxin233666.mfl.entities.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
@@ -14,6 +15,9 @@ import java.util.Optional;
 @Repository
 public interface ArticleRepository extends JpaRepository<Article, Long> , JpaSpecificationExecutor<Article> {
 
+    @EntityGraph(attributePaths = {"author", "tags"})
     Optional<Article> findBySlug(String slug);
+
+    @EntityGraph(attributePaths = {"author", "tags"})
     Page<Article> findByAuthorInOrderByCreatedAtDesc(List<User> authors, Pageable pageable);
 }

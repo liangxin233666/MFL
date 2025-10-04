@@ -23,6 +23,9 @@ import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
+
 
 @Service
 public class ArticleService {
@@ -45,7 +48,7 @@ public class ArticleService {
         User author = findUserById(Long.valueOf(currentUserDetails.getUsername()));
 
 
-        Set<Tag> tags = processTagsEfficiently(request.article().tagList());
+        Set<Tag> tags = processTagsEfficiently(new HashSet<>(request.article().tagList()));
 
         Article article = new Article();
         article.setAuthor(author);
@@ -108,7 +111,9 @@ public class ArticleService {
 
 
     private ArticleResponse buildArticleResponse(Article article, User currentUser) {
-        Set<String> tagList = article.getTags().stream().map(Tag::getName).collect(Collectors.toSet());
+        List<String> tagList = article.getTags().stream()
+                .map(Tag::getName)
+                .collect(Collectors.toList());
 
         boolean isFavorited = (currentUser != null) && article.getFavoritedBy().contains(currentUser);
         int favoritesCount = article.getFavoritedBy().size();
@@ -143,6 +148,7 @@ public class ArticleService {
         return userRepository.findById(id).orElseThrow(() -> new  ResourceNotFoundException("User not found for id: " + id));
     }
 
+    @CacheEvict(value = "articles", key = "#slug")
     @Transactional
     public void deleteArticle(String slug, UserDetails currentUserDetails) {
         Article article = findArticleBySlug(slug);
@@ -184,6 +190,7 @@ public class ArticleService {
     }
 
 
+    @Cacheable(value = "articles", key = "#slug")
     @Transactional(readOnly = true)
     public ArticleResponse getArticleBySlug(String slug, UserDetails currentUserDetails) {
         Article article = findArticleBySlug(slug);
@@ -195,6 +202,7 @@ public class ArticleService {
         return buildArticleResponse(article, currentUser);
     }
 
+    @CacheEvict(value = "articles", key = "#slug")
     @Transactional
     public ArticleResponse updateArticle(String slug, @Valid UpdateArticleRequest request, UserDetails currentUserDetails) {
         Article article = findArticleBySlug(slug);

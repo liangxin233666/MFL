@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -19,8 +20,9 @@ public record NewArticleRequest(@Valid @NotNull ArticleDto article) {
             @NotBlank(message = "body cannot be empty")
             String body,
 
-            Set<String> tagList
-    ) { public ArticleDto {
+            List<String> tagList
+    ) {
+        public ArticleDto {
         if (title != null) title = title.trim();
         if (description != null) description = description.trim();
         if (body != null) body = body.trim();
@@ -30,9 +32,10 @@ public record NewArticleRequest(@Valid @NotNull ArticleDto article) {
             tagList = tagList.stream()
                     .filter(tag -> tag != null && !tag.isBlank())
                     .map(String::trim)
-                    .collect(Collectors.toSet());
+                    .collect(Collectors.toList());
         } else {
-            tagList = Collections.emptySet(); // 如果传入null，则视为空集合
+            tagList = Collections.emptyList(); // 如果传入null，则视为空集合
         }
-    }}
+       }
+    }
 }

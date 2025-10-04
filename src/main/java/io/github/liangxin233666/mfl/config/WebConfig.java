@@ -18,7 +18,7 @@ public class WebConfig {
             resolver.setSizeParameterName("limit");
 
             // 设置一个合理的最大页面大小，防止恶意请求
-            resolver.setMaxPageSize(100);
+            resolver.setMaxPageSize(60);
 
             // 让解析器即使只有一个页面也返回Pageable，而不是unpaged
             resolver.setFallbackPageable(PageRequest.of(0, 20));
