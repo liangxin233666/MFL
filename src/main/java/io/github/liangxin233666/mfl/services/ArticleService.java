@@ -63,7 +63,7 @@ public class ArticleService {
         Article savedArticle = articleRepository.save(article);
 
 
-        return buildArticleResponse(savedArticle, author);
+        return buildArticleResponseSimply(savedArticle);
     }
 
 
@@ -98,7 +98,8 @@ public class ArticleService {
     }
 
     private String generateUniqueSlug(String title) {
-        String uniqueSlug= slugify.slugify(title);
+        int r = ThreadLocalRandom.current().nextInt(100000, 1000000);
+        String uniqueSlug= slugify.slugify(title)+"-"+r;
 
         // 最多一次查询来确认slug是否唯一。只有在发生冲突时才会有额外的查询。
         while (articleRepository.findBySlug(uniqueSlug).isPresent()) {
@@ -109,14 +110,14 @@ public class ArticleService {
         return uniqueSlug;
     }
 
-
+    //回复详细信息
     private ArticleResponse buildArticleResponse(Article article, User currentUser) {
         List<String> tagList = article.getTags().stream()
                 .map(Tag::getName)
                 .collect(Collectors.toList());
 
         boolean isFavorited = (currentUser != null) && article.getFavoritedBy().contains(currentUser);
-        int favoritesCount = article.getFavoritedBy().size();
+        int favoritesCount = article.getFavoritesCount();
 
         User author = article.getAuthor();
         boolean isFollowingAuthor = (currentUser != null) && author.getFollowers().contains(currentUser);
@@ -138,6 +139,32 @@ public class ArticleService {
                 article.getUpdatedAt(),
                 isFavorited,
                 favoritesCount,
+                authorProfile
+        );
+
+        return new ArticleResponse(articleDto);
+    }
+
+    //回复大概信息
+    private ArticleResponse buildArticleResponseSimply(Article article) {
+        User author = article.getAuthor();
+        ProfileResponse.ProfileDto authorProfile = new ProfileResponse.ProfileDto(
+                author.getUsername(),
+                null,
+                author.getImage(),
+                null
+        );
+
+        ArticleResponse.ArticleDto articleDto = new ArticleResponse.ArticleDto(
+                article.getSlug(),
+                article.getTitle(),
+                article.getDescription(),
+                null,
+                null,
+                article.getCreatedAt(),
+                article.getUpdatedAt(),
+                null,
+                null,
                 authorProfile
         );
 
@@ -166,11 +193,11 @@ public class ArticleService {
     public ArticleResponse favoriteArticle(String slug, UserDetails currentUserDetails) {
         Article article = findArticleBySlug(slug);
         User currentUser = findUserById(Long.valueOf(currentUserDetails.getUsername()));
-
-        article.getFavoritedBy().add(currentUser);
-        Article savedArticle = articleRepository.save(article);
-
-        return buildArticleResponse(savedArticle, currentUser);
+        if (!article.getFavoritedBy().contains(currentUser)) {
+            article.getFavoritedBy().add(currentUser);
+            article.setFavoritesCount(article.getFavoritesCount() + 1);
+        }
+        return buildArticleResponseSimply(article);
     }
 
     @Transactional
@@ -178,10 +205,13 @@ public class ArticleService {
         Article article = findArticleBySlug(slug);
         User currentUser = findUserById(Long.valueOf(currentUserDetails.getUsername()));
 
-        article.getFavoritedBy().remove(currentUser);
-        Article savedArticle = articleRepository.save(article);
+        if (article.getFavoritedBy().contains(currentUser)) {
 
-        return buildArticleResponse(savedArticle, currentUser);
+            article.getFavoritedBy().remove(currentUser);
+
+            article.setFavoritesCount(Math.max(0, article.getFavoritesCount() - 1));
+        }
+        return buildArticleResponseSimply(article);
     }
 
     private Article findArticleBySlug(String slug) {
@@ -214,6 +244,7 @@ public class ArticleService {
         }
 
 
+        //只要传进来的title不为空，slug就会变
         if (request.article().title() != null) {
             article.setTitle(request.article().title());
 
@@ -228,9 +259,10 @@ public class ArticleService {
         }
 
         Article updatedArticle = articleRepository.save(article);
-        return buildArticleResponse(updatedArticle, currentUser);
+        return buildArticleResponseSimply(updatedArticle);
     }
 
+    //注意，这个是类似b站的返回多篇文章的简要，所以一些信息没有
     @Transactional(readOnly = true)
     public MultipleArticlesResponse getArticles(String tag, String author, String favoritedBy, Pageable pageable, UserDetails currentUserDetails) {
 
@@ -247,35 +279,31 @@ public class ArticleService {
             spec = spec.and(favoritedBy(favoritedBy));
         }
 
-
         Page<Article> articlePage = articleRepository.findAll(spec, pageable);
 
-
-        User currentUser = (currentUserDetails != null)
-                ? findUserById(Long.valueOf(currentUserDetails.getUsername()))
-                : null;
-
         List<ArticleResponse.ArticleDto> articleDtos = articlePage.getContent().stream()
-                .map(article -> buildArticleResponse(article, currentUser).article())
+                .map(article -> buildArticleResponseSimply(article).article())
                 .collect(Collectors.toList());
 
         return new MultipleArticlesResponse(articleDtos, articlePage.getTotalElements());
     }
 
+
+    //同时，简要信息
     @Transactional(readOnly = true)
     public MultipleArticlesResponse getFeedArticles(Pageable pageable, UserDetails currentUserDetails) {
         User currentUser = findUserById(Long.valueOf(currentUserDetails.getUsername()));
 
         List<User> followedUsers = List.copyOf(currentUser.getFollowing());
         if (followedUsers.isEmpty()) {
-            // 如果没有关注任何人，直接返回空
+
             return new MultipleArticlesResponse(List.of(), 0);
         }
 
         Page<Article> articlePage = articleRepository.findByAuthorInOrderByCreatedAtDesc(followedUsers, pageable);
 
         List<ArticleResponse.ArticleDto> articleDtos = articlePage.getContent().stream()
-                .map(article -> buildArticleResponse(article, currentUser).article())
+                .map(article -> buildArticleResponseSimply(article).article())
                 .collect(Collectors.toList());
 
         return new MultipleArticlesResponse(articleDtos, articlePage.getTotalElements());

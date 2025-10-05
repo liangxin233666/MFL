@@ -58,8 +58,6 @@ public class ProfileService {
         return buildProfileResponse(userToUnfollow, false);
     }
 
-    // --- 辅助方法 ---
-
     private User findUserByUsername(String username) {
         return userRepository.findByUsername(username)
                 .orElseThrow(() -> new ResourceNotFoundException("Profile not found for username: " + username));

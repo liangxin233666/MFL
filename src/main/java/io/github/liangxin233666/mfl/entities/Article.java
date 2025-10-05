@@ -68,4 +68,6 @@ public class Article {
     )
     private List<Comment> comments = new ArrayList<>();
 
+    @Column(nullable = false)
+    private int favoritesCount = 0;
 }

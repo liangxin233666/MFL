@@ -46,20 +46,18 @@ public class CommentService {
         comment.setAuthor(author);
 
         Comment savedComment = commentRepository.save(comment);
-        return buildCommentResponse(savedComment, author);
+        return buildCommentResponse(savedComment);
     }
 
     @Transactional(readOnly = true)
-    public MultipleCommentsResponse getCommentsBySlug(String slug, Pageable pageable, UserDetails currentUserDetails) {
+    public MultipleCommentsResponse getCommentsBySlug(String slug, Pageable pageable) {
         Article article = findArticleBySlug(slug);
-        User currentUser = (currentUserDetails != null)
-                ? findUserById(Long.valueOf(currentUserDetails.getUsername()))
-                : null;
+
 
         Page<Comment> commentPage = commentRepository.findByArticleAndParentIsNull(article, pageable);
 
         List<CommentResponse.CommentDto> commentDtos = commentPage.getContent().stream()
-                .map(comment -> buildCommentDto(comment, currentUser))
+                .map(this::buildCommentDto)
                 .collect(Collectors.toList());
 
         return new MultipleCommentsResponse(commentDtos);
@@ -80,20 +78,19 @@ public class CommentService {
     }
 
 
-    private CommentResponse.CommentDto buildCommentDto(Comment comment, User currentUser) {
+    private CommentResponse.CommentDto buildCommentDto(Comment comment) {
         User author = comment.getAuthor();
-        boolean isFollowing = (currentUser != null) && currentUser.getFollowing().contains(author);
 
         ProfileResponse.ProfileDto authorProfile = new ProfileResponse.ProfileDto(
                 author.getUsername(),
-                author.getBio(),
+                null,
                 author.getImage(),
-                isFollowing
+                null
         );
 
         // 递归构建回复列表
         List<CommentResponse.CommentDto> replyDtos = comment.getReplies().stream()
-                .map(reply -> buildCommentDto(reply, currentUser))
+                .map(this::buildCommentDto)
                 .collect(Collectors.toList());
 
         return new CommentResponse.CommentDto(
@@ -107,8 +104,8 @@ public class CommentService {
     }
 
 
-    private CommentResponse buildCommentResponse(Comment comment, User currentUser) {
-        return new CommentResponse(buildCommentDto(comment, currentUser));
+    private CommentResponse buildCommentResponse(Comment comment) {
+        return new CommentResponse(buildCommentDto(comment));
     }
 
     private Article findArticleBySlug(String slug) {
@@ -127,8 +124,6 @@ public class CommentService {
                 ? findUserById(Long.valueOf(currentUserDetails.getUsername()))
                 : null;
 
-
-
         // 找到被回复的父评论
         Comment parentComment = commentRepository.findById(parentCommentId)
                 .orElseThrow(() -> new  ResourceNotFoundException("Parent comment not found"));
@@ -142,7 +137,7 @@ public class CommentService {
         Comment savedReply = commentRepository.save(reply);
 
         // 返回新创建的回复
-        return new CommentResponse(buildCommentDto(savedReply, currentUser));
+        return new CommentResponse(buildCommentDto(savedReply));
 
 
     }

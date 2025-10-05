@@ -1,0 +1,2 @@
+ALTER TABLE articles
+ADD COLUMN favorites_count BIGINT NOT NULL DEFAULT 0;

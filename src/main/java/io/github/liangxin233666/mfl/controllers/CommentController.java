@@ -9,6 +9,7 @@ import jakarta.validation.constraints.NotBlank;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -30,15 +31,15 @@ public class CommentController {
             @Valid @RequestBody NewCommentRequest request,
             @AuthenticationPrincipal UserDetails currentUser) {
         CommentResponse commentResponse = commentService.addComment(slug, request, currentUser);
-        return ResponseEntity.ok(commentResponse);
+        return ResponseEntity.status(HttpStatus.CREATED).body(commentResponse);
     }
 
     @GetMapping
     public ResponseEntity<MultipleCommentsResponse> getComments(
             @PathVariable String slug,
-            @PageableDefault(size = 10, sort = "createdAt") Pageable pageable,
-            @AuthenticationPrincipal UserDetails currentUser) {
-        MultipleCommentsResponse comments = commentService.getCommentsBySlug(slug,pageable, currentUser);
+            @PageableDefault(size = 10, sort = "createdAt") Pageable pageable
+    ) {
+        MultipleCommentsResponse comments = commentService.getCommentsBySlug(slug,pageable);
         return ResponseEntity.ok(comments);
     }
 

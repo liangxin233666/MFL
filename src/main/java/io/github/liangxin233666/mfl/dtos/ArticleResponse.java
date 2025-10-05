@@ -14,8 +14,8 @@ public record ArticleResponse(ArticleDto article) {
             List<String> tagList,
             OffsetDateTime createdAt,
             OffsetDateTime updatedAt,
-            boolean favorited,
-            int favoritesCount,
+            Boolean favorited,
+            Integer favoritesCount,
             ProfileResponse.ProfileDto author
     ) {}
 }
