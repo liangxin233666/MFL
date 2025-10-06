@@ -1,74 +1,71 @@
 <script setup lang="ts">
-// 这个 HelloWorld 组件我们暂时不用修改，所以保留导入
-import HelloWorld from './components/HelloWorld.vue'
+import { MagnifyingGlassIcon } from '@heroicons/vue/24/outline';
+import { ArrowUpOnSquareIcon } from '@heroicons/vue/24/solid';
 </script>
 
 <template>
-  <!--
-    我们创建一个主容器，并使用 Tailwind 的 Flexbox 和颜色功能类
-    - min-h-screen: 最小高度为整个屏幕高度
-    - bg-slate-800: 背景颜色为深灰色
-    - text-white: 默认文字颜色为白色
-    - flex flex-col: 设置为 flex 容器，子元素垂直排列
-    - justify-center: 垂直居中
-    - items-center: 水平居中
-    - p-8: 添加内边距
-  -->
-  <main class="min-h-screen bg-slate-800 text-white flex flex-col justify-center items-center p-8">
+  <div class="flex flex-col min-h-screen bg-base-200/50 font-sans">
+    <header class="bg-base-100/80 backdrop-blur sticky top-0 z-50 border-b border-base-200">
+      <div class="navbar container mx-auto py-1 min-h-fit">
+        <!-- 导航栏左侧 -->
+        <div class="navbar-start">
+          <router-link to="/" class="btn btn-ghost text-2xl font-black normal-case text-pink-500 hover:bg-transparent">
+            bilibili
+          </router-link>
+          <ul class="menu menu-horizontal px-1 font-medium hidden sm:flex">
+            <li><router-link to="/" active-class="text-pink-500">首页</router-link></li>
+            <li><router-link to="/login" active-class="text-pink-500">登录</router-link></li>
+          </ul>
+        </div>
 
-    <!-- 这是我们的主要测试标题 -->
-    <!--
-      - text-5xl: 非常大的字体
-      - font-extrabold: 字体加粗
-      - text-cyan-400: 青色文字
-      - animate-pulse: 一个跳动的动画效果
-    -->
-    <h1 class="text-5xl font-extrabold text-cyan-400 animate-pulse">
-      Tailwind CSS 配置成功!
-    </h1>
-    <p class="mt-4 text-lg text-slate-300">
-      如果您能看到这个跳动的青色大标题，说明一切正常！
-    </p>
+        <!-- 导航栏中间 -->
+        <div class="navbar-center hidden lg:flex">
+          <div class="relative w-96">
+            <input type="text" placeholder="搜点好东西..." class="input input-bordered h-9 w-full rounded-lg bg-base-200 focus:bg-base-100 focus:border-pink-500 transition-all" />
+            <MagnifyingGlassIcon class="absolute top-1/2 right-3 h-5 w-5 -translate-y-1/2 text-base-content/50" />
+          </div>
+        </div>
 
-    <!-- 这是 Vite 和 Vue 的 Logo -->
-    <div class="my-10 flex gap-10">
-      <a href="https://vite.dev" target="_blank">
-        <img src="/vite.svg" class="logo" alt="Vite logo" />
-      </a>
-      <a href="https://vuejs.org/" target="_blank">
-        <img src="./assets/vue.svg" class="logo vue" alt="Vue logo" />
-      </a>
-    </div>
+        <div class="navbar-end">
+          <div class="dropdown dropdown-end dropdown-hover">
+            <!-- 头像触发器 -->
+            <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar">
+              <div class="w-10 rounded-full">
+                <img src="https://i.pravatar.cc/150?u=a042581f4e29026704d" alt="User avatar" />
+              </div>
+            </div>
+            <!-- 下拉菜单内容 -->
+            <ul tabindex="0" class="dropdown-content menu menu-sm z-[1] mt-3 p-2 shadow bg-base-100 rounded-box w-52">
+              <li>
+                <router-link to="/editor" class="font-bold text-pink-500 hover:!text-pink-500">
+                  <ArrowUpOnSquareIcon class="w-5 h-5"/>
+                  投稿
+                </router-link>
+              </li>
+              <li class="border-t my-1 border-base-200/50"></li>
+              <li><router-link to="/profile/diancipaodawenzi">个人主页</router-link></li>
+              <li><router-link to="/settings">设置</router-link></li>
+              <li class="border-t my-1 border-base-200/50"></li>
+              <li><a>退出登录</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </header>
 
-    <!-- 这是原来的 HelloWorld 组件，我们也给它加点样式 -->
-    <!--
-      - bg-slate-700: 组件背景色
-      - rounded-xl: 圆角
-      - shadow-lg: 添加阴影
-    -->
-    <div class="p-8 bg-slate-700 rounded-xl shadow-lg">
-      <HelloWorld msg="Vite + Vue" />
-    </div>
+    <!-- 主体内容区域 -->
+    <main class="flex-grow py-8">
+      <div class="container mx-auto">
+        <router-view></router-view>
+      </div>
+    </main>
 
-  </main>
+  </div>
 </template>
 
-<!--
-  这部分是原有的 Scoped CSS，我们保留它
-  它专门用于设置 Vite 和 Vue 的 Logo 动画效果
-  这说明了 Tailwind 和传统 CSS 可以很好地共存
--->
-<style scoped>
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.vue:hover {
-  filter: drop-shadow(0 0 2em #42b883aa);
+<!-- 添加一个全局字体样式，让界面更好看 -->
+<style>
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 }
 </style>
