@@ -126,7 +126,10 @@ const renderedBody = computed(() => article.value?.body ? marked.parse(article.v
             <span class="text-xs text-base-content/50">发布于 {{ new Date(article.createdAt).toLocaleDateString() }}</span>
           </div>
           <div class="divider"></div>
-          <article class="prose max-w-none lg:prose-lg" v-html="renderedBody"></article>
+
+          <!-- 修改点：添加了 class="article-content" 以便 CSS 控制内部图片 -->
+          <article class="prose max-w-none lg:prose-lg article-content" v-html="renderedBody"></article>
+
           <div class="card-actions justify-end mt-8">
             <button @click="toggleFavorite" :disabled="isFavoriting" class="btn gap-2" :class="{ 'btn-ghost': !article.favorited, 'bg-pink-100 text-pink-500': article.favorited }">
               <span v-if="isFavoriting" class="loading loading-spinner loading-xs"></span>
@@ -183,3 +186,18 @@ const renderedBody = computed(() => article.value?.body ? marked.parse(article.v
   </div>
   <div v-else class="text-center py-20 text-xl font-bold">文章不存在或加载失败</div>
 </template>
+
+<style scoped>
+/*
+   核心修改：使用 :deep() 穿透控制 v-html 里的图片
+   限制最大高度为 550px，防止图片太占位置
+*/
+:deep(.article-content img) {
+  max-height: 550px;   /* 限制高度，不再铺满全屏 */
+  width: auto;         /* 宽度自适应 */
+  max-width: 100%;     /* 手机端不撑破屏幕 */
+  margin: 1.5rem auto; /* 居中显示 */
+  display: block;      /* 块级显示 */
+  border-radius: 0.5rem;
+}
+</style>
