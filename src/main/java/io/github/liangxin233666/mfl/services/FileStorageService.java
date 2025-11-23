@@ -10,6 +10,9 @@ import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
+
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -114,8 +117,18 @@ public class FileStorageService {
         if (baseUrl.endsWith("/")) {
             baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
         }
-        // 例: "http://minio/bucket/uploads/..." -> "uploads/..."
-        return url.substring(baseUrl.length() + 1);
+
+        // 1. 截取掉域名部分，得到 encoded 的 key
+        String encodedKey = url.substring(baseUrl.length() + 1);
+
+        // 2. 进行 URL 解码，将 %E6... 转换回中文
+        try {
+            return URLDecoder.decode(encodedKey, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            log.error("Failed to decode URL key: {}", encodedKey, e);
+            // 如果解码失败，回退到原始字符串，但这通常不会发生
+            return encodedKey;
+        }
     }
 
     @Async // <--- 这个注解是魔法的来源

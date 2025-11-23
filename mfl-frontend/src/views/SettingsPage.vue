@@ -3,7 +3,6 @@ import { ref } from 'vue';
 import { useAuthStore } from '../stores/auth';
 import { UserCircleIcon, ShieldCheckIcon, CameraIcon } from '@heroicons/vue/24/outline';
 import { useUploader } from '../composables/useUploader';
-
 const authStore = useAuthStore();
 const { isUploading, uploadFile } = useUploader();
 
@@ -27,13 +26,15 @@ const handleAvatarUpload = async (event: Event) => {
   if (!input.files?.length) return;
 
   const file = input.files[0];
+
   const tempUrl = await uploadFile(file); // isUploading 状态由 useUploader 内部管理
 
   if (tempUrl) {
     // 成功上传到云后，只提交 image 字段来更新用户信息
     const payload = { user: { image: tempUrl } };
     try {
-      await authStore.updateSettings(payload);
+       await authStore.updateSettings(payload);
+
       alert('头像更新成功！');
     } catch (error) {
       alert('头像保存失败，请重试');
