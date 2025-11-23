@@ -16,18 +16,24 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import io.github.liangxin233666.mfl.dtos.UpdateUserRequest;
 
+import java.util.List;
+import java.util.Map;
+
 @Service
 public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final FileStorageService fileStorageService;
+
 
     // 使用构造器注入所有依赖
-    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService) {
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService, FileStorageService fileStorageService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.fileStorageService = fileStorageService;
     }
 
     @Transactional
@@ -100,6 +106,7 @@ public class UserService {
 
         UpdateUserRequest.UserDto updates = request.user();
 
+
         if (updates.email() != null) {
 
             if (!updates.email().equals(userToUpdate.getEmail()) && userRepository.findByEmail(updates.email()).isPresent()) {
@@ -115,6 +122,7 @@ public class UserService {
                 throw new IllegalArgumentException("Username already in use");
             }
             userToUpdate.setUsername(newUsername);
+            System.out.println(newUsername);
         }
 
         if (updates.password() != null) {
@@ -123,9 +131,15 @@ public class UserService {
         }
 
         if (updates.bio() != null) {
-            userToUpdate.setBio(updates.bio());
+            userToUpdate.setBio(updates.bio().isEmpty()?null:updates.bio());
         }
-        if (updates.image() != null) {
+        if (updates.image()!= null && updates.image().contains("/uploads/temp/")) {
+            // 头像是一个临时URL，需要转正
+            Map<String, String> urlMapping = fileStorageService.promoteFiles(List.of(updates.image()));
+            String finalImageUrl = urlMapping.get(updates.image());
+            userToUpdate.setImage(finalImageUrl);
+        } else if (updates.image()!= null) {
+            // 用户可能提供了一个非我们系统的URL，或者一个已经转正的URL
             userToUpdate.setImage(updates.image());
         }
 

@@ -1,137 +1,185 @@
 <script setup lang="ts">
-import { ref } from 'vue';
-import { ShareIcon, StarIcon, ChatBubbleBottomCenterTextIcon, PlusIcon } from '@heroicons/vue/24/solid';
-import ArticlePreview from '../components/ArticlePreview.vue'; // 复用文章预览
+import { ref, onMounted, computed } from 'vue';
+import { useRoute } from 'vue-router';
+import apiClient from '../api/apiClient';
+import type { Article, Comment } from '../types/api';
+import { marked } from 'marked';
+import { useAuthStore } from '../stores/auth';
 
-// 模拟数据
-const article = ref({
-  title: '【Java 后端】探索 Spring Boot 的未来发展方向',
-  author: 'Albert Pai',
-  avatar: 'https://i.pravatar.cc/150?u=a042581f4e29026705d',
-  publishDate: '2025-10-06',
-  tags: ['Java', 'SpringBoot', '后端', '技术分享'],
-  // 使用 Markdown 格式
-  content: `
-## 引言
+// 导入所有需要的组件和图标
+import UserInfo from '../components/UserInfo.vue';
+import CommentItem from '../components/CommentItem.vue';
+import { ShareIcon, StarIcon, ChatBubbleBottomCenterTextIcon, PlusIcon, CheckIcon } from '@heroicons/vue/24/solid';
 
-Spring Boot 作为 Java 生态中最受欢迎的微服务框架，极大地简化了 Spring 应用的创建和部署。随着云原生和响应式编程的兴起，Spring Boot 也在不断进化以适应新的技术趋势。
+// --- 核心状态 ---
+const route = useRoute();
+const authStore = useAuthStore();
+const article = ref<Article | null>(null);
+const isLoading = ref(true);
 
-### 1. 更好的 GraalVM 支持
+// --- 评论区专用状态 ---
+const comments = ref<Comment[]>([]);
+const isCommentsLoading = ref(false);
+const commentsCurrentPage = ref(0);
+const hasMoreComments = ref(true);
+const commentsPerPage = 5;
 
-为了实现更快的启动速度和更低的内存占用，Spring Boot 正在积极拥抱 GraalVM Native Image。这意味着未来的 Spring Boot 应用可以被编译成本地可执行文件，实现“秒级启动”。
+// --- 发布顶层评论状态 ---
+const newTopLevelComment = ref('');
+const isSubmittingTopComment = ref(false);
 
-\`\`\`java
-@SpringBootApplication
-public class MyApplication {
-    public static void main(String[] args) {
-        SpringApplication.run(MyApplication.class, args);
-    }
-}
-\`\`\`
+// --- 点赞/关注状态 ---
+const isFavoriting = ref(false);
+const isFollowing = ref(false);
 
-### 2. 响应式编程的深化
 
-Project Loom 和虚拟线程的引入将为 Java 的并发编程带来革命性的变化。Spring Boot 6 将会更深入地集成这些特性，让开发者可以更简单地编写出高性能的异步代码。
+// --- API 调用与逻辑 ---
+const fetchComments = async (page = 0) => {
+  if (isCommentsLoading.value) return;
+  isCommentsLoading.value = true;
+  try {
+    const slug = route.params.slug as string;
+    const response = await apiClient.get<{ comments: Comment[] }>(`/articles/${slug}/comments?limit=${commentsPerPage}&offset=${page * commentsPerPage}`);
+    if (page === 0) comments.value = response.data.comments;
+    else comments.value.push(...response.data.comments);
+    hasMoreComments.value = response.data.comments.length === commentsPerPage;
+    commentsCurrentPage.value = page;
+  } finally {
+    isCommentsLoading.value = false;
+  }
+};
 
-- **简化异步代码**：避免回调地狱。
-- **提升吞吐量**：用更少的资源处理更多的请求。
+const reloadAllComments = () => {
+  hasMoreComments.value = true;
+  fetchComments(0);
+};
 
-## 结论
+const postTopLevelComment = async () => {
+  if (!newTopLevelComment.value.trim() || !article.value) return;
+  isSubmittingTopComment.value = true;
+  try {
+    await apiClient.post(`/articles/${article.value.slug}/comments`, { comment: { body: newTopLevelComment.value } });
+    newTopLevelComment.value = '';
+    reloadAllComments();
+  } catch (error) { alert('评论发布失败'); }
+  finally { isSubmittingTopComment.value = false; }
+};
 
-Spring Boot 的未来是光明的。它正朝着更云原生、更高效、更易用的方向发展。对于 Java 开发者来说，持续关注这些变化并学习新技术是至关重要的。
-  `,
+
+onMounted(async () => {
+  const slug = route.params.slug as string;
+  isLoading.value = true;
+  try {
+    const articleRes = await apiClient.get<{ article: Article }>(`/articles/${slug}`);
+    article.value = articleRes.data.article;
+    await fetchComments(0);
+  } catch (error) {
+    console.error("获取文章详情失败:", error);
+  } finally {
+    isLoading.value = false;
+  }
 });
 
-const recommendations = ref([
-  { imageUrl: 'https://picsum.photos/seed/rec1/400/225', author: 'Eric Simons', avatar: 'https://i.pravatar.cc/150?u=a042581f4e29026704d', title: '【前端开发】如何构建可扩展的 Web 应用', favoritesCount: 29000, commentsCount: 245 },
-  { imageUrl: 'https://picsum.photos/seed/rec2/400/225', author: 'Jane Smith', avatar: 'https://i.pravatar.cc/150?u=a042581f4e29026707d', title: '从零开始，使用 Vite 和 Vue 构建一个全栈应用', favoritesCount: 63000, commentsCount: 60 },
-]);
+
+const toggleFavorite = async () => {
+  if (!authStore.isAuthenticated || !article.value) return alert('请先登录');
+  isFavoriting.value = true;
+  const original = { fav: article.value.favorited, count: article.value.favoritesCount || 0 };
+  article.value.favorited = !original.fav;
+  article.value.favoritesCount = original.fav ? original.count - 1 : original.count + 1;
+  try {
+    original.fav ? await apiClient.delete(`/articles/${article.value.slug}/favorite`) : await apiClient.post(`/articles/${article.value.slug}/favorite`, {});
+  } catch (error) {
+    article.value.favorited = original.fav;
+    article.value.favoritesCount = original.count;
+    alert('操作失败');
+  } finally { isFavoriting.value = false; }
+};
+
+const toggleFollow = async () => {
+  if (!authStore.isAuthenticated || !article.value) return alert('请先登录');
+  isFollowing.value = true;
+  const originalFollowing = article.value.author.following;
+  article.value.author.following = !originalFollowing;
+  try {
+    const { username } = article.value.author;
+    originalFollowing ? await apiClient.delete(`/profiles/${username}/follow`) : await apiClient.post(`/profiles/${username}/follow`, {});
+  } catch (error) {
+    article.value.author.following = originalFollowing;
+    alert('操作失败');
+  } finally { isFollowing.value = false; }
+};
+
+const renderedBody = computed(() => article.value?.body ? marked.parse(article.value.body) : '');
 </script>
 
 <template>
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+  <div v-if="isLoading" class="text-center py-20"><span class="loading loading-spinner loading-lg"></span></div>
+  <div v-else-if="article" class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <!-- 左侧主内容区 -->
     <div class="lg:col-span-2">
       <div class="card bg-base-100 shadow-md">
         <div class="card-body">
           <h1 class="text-3xl font-bold mb-2">{{ article.title }}</h1>
           <div class="flex items-center gap-4 text-sm text-base-content/70 mb-4">
-            <span>发布于 {{ article.publishDate }}</span>
-            <div class="flex gap-2">
-              <div v-for="tag in article.tags" :key="tag" class="badge badge-ghost badge-sm">{{ tag }}</div>
-            </div>
+            <UserInfo :profile="article.author" size="xs" />
+            <span class="text-xs text-base-content/50">发布于 {{ new Date(article.createdAt).toLocaleDateString() }}</span>
           </div>
-
           <div class="divider"></div>
-
-          <article class="prose max-w-none lg:prose-lg" v-html="article.content"></article>
-
+          <article class="prose max-w-none lg:prose-lg" v-html="renderedBody"></article>
           <div class="card-actions justify-end mt-8">
-            <button class="btn btn-ghost"><StarIcon class="w-5 h-5"/> 收藏</button>
+            <button @click="toggleFavorite" :disabled="isFavoriting" class="btn gap-2" :class="{ 'btn-ghost': !article.favorited, 'bg-pink-100 text-pink-500': article.favorited }">
+              <span v-if="isFavoriting" class="loading loading-spinner loading-xs"></span>
+              <StarIcon class="w-5 h-5"/> {{ article.favorited ? '已点赞' : '点赞' }} ({{ article.favoritesCount || 0 }})
+            </button>
             <button class="btn btn-ghost"><ShareIcon class="w-5 h-5"/> 分享</button>
           </div>
         </div>
       </div>
 
-      <div class="card bg-base-100 shadow-md mt-8">
+      <!-- 全新的评论区 -->
+      <div id="comment-section" class="card bg-base-100 shadow-md mt-8">
         <div class="card-body">
-          <h3 class="text-xl font-bold mb-4 flex items-center gap-2">
-            <ChatBubbleBottomCenterTextIcon class="w-6 h-6 text-pink-500"/>
-            <span>评论区</span>
-          </h3>
-          <div class="flex items-start gap-4">
-            <div class="avatar">
-              <div class="w-12 h-12 rounded-full">
-                <img src="https://i.pravatar.cc/150?u=a042581f4e29026704d" />
-              </div>
-            </div>
-            <textarea class="textarea textarea-bordered flex-grow" placeholder="留下你的精彩评论吧！"></textarea>
-            <button class="btn bg-pink-500 hover:bg-pink-600 text-white">发布</button>
+          <h3 class="text-xl font-bold mb-4 flex items-center gap-2"><ChatBubbleBottomCenterTextIcon class="w-6 h-6 text-pink-500"/> <span>评论区</span></h3>
+          <div v-if="authStore.isAuthenticated" class="flex items-start gap-4">
+            <div class="avatar"><div class="w-12 h-12 rounded-full"><img :src="authStore.userImage"/></div></div>
+            <textarea v-model="newTopLevelComment" class="textarea textarea-bordered flex-grow" placeholder="留下你的精彩评论吧！" rows="2"></textarea>
+            <button @click="postTopLevelComment" class="btn bg-pink-500 text-white" :disabled="isSubmittingTopComment || !newTopLevelComment.trim()">
+              <span v-if="isSubmittingTopComment" class="loading loading-spinner loading-xs"></span>发布
+            </button>
           </div>
-
-          <div class="mt-6 text-center text-base-content/50 py-6">
-            还没有评论，快来抢沙发吧！
+          <div v-else class="text-center p-4 bg-base-200 rounded-lg"><p>你需要 <router-link to="/login" class="text-pink-500 font-bold">登录</router-link> 才能发表评论哦~</p></div>
+          <div class="divider my-4"></div>
+          <div v-if="comments.length > 0" class="space-y-2">
+            <CommentItem v-for="comment in comments" :key="comment.id" :comment="comment" :article-slug="article.slug" @comment-posted="reloadAllComments" />
+          </div>
+          <div v-else-if="!isCommentsLoading" class="text-center text-base-content/50 py-6">还没有评论，快来抢沙发吧！</div>
+          <div class="text-center mt-4" v-if="hasMoreComments">
+            <button @click="fetchComments(commentsCurrentPage + 1)" class="btn btn-ghost" :disabled="isCommentsLoading">
+              <span v-if="isCommentsLoading" class="loading loading-spinner"></span>加载更多评论
+            </button>
           </div>
         </div>
       </div>
     </div>
 
+    <!-- 右侧作者区 -->
     <aside class="space-y-8">
       <div class="card bg-base-100 shadow-md">
         <div class="card-body items-center text-center">
-          <div class="avatar">
-            <div class="w-20 rounded-full">
-              <img :src="article.avatar" />
-            </div>
-          </div>
-          <h2 class="card-title mt-2">{{ article.author }}</h2>
-          <p class="text-sm text-base-content/70">一位热爱分享技术的开发者</p>
-          <div class="card-actions justify-end mt-2">
-            <button class="btn bg-pink-500 hover:bg-pink-600 text-white btn-sm w-full">
-              <PlusIcon class="w-4 h-4"/>
-              关注
+          <UserInfo :profile="article.author" size="lg" />
+          <p class="text-sm text-base-content/70 -mt-2">{{ article.author.bio || '这位用户很神秘，什么也没留下...' }}</p>
+          <div class="card-actions justify-end mt-2 w-full">
+            <button @click="toggleFollow" :disabled="isFollowing" class="btn btn-sm w-full gap-1" :class="{ 'bg-pink-500 text-white': !article.author.following, 'btn-outline': article.author.following }">
+              <span v-if="isFollowing" class="loading loading-spinner loading-xs"></span>
+              <CheckIcon v-if="!isFollowing && article.author.following" class="w-4 h-4" />
+              <PlusIcon v-if="!isFollowing && !article.author.following" class="w-4 h-4"/>
+              {{ isFollowing ? '处理中...' : (article.author.following ? '已关注' : '关注') }}
             </button>
-          </div>
-        </div>
-      </div>
-
-      <div class="card bg-base-100 shadow-md">
-        <div class="card-body">
-          <h3 class="card-title text-lg">相关推荐</h3>
-          <div class="space-y-4 mt-2">
-            <div v-for="(rec, index) in recommendations" :key="index" class="flex gap-3 group">
-              <div class="w-2/5 flex-shrink-0 rounded-md overflow-hidden">
-                <img :src="rec.imageUrl" class="w-full h-full object-cover aspect-video transition-transform duration-300 group-hover:scale-110" />
-              </div>
-              <div class="flex-grow">
-                <a class="font-medium text-sm leading-tight hover:text-pink-500 transition-colors two-line-clamp" :title="rec.title">
-                  {{ rec.title }}
-                </a>
-                <span class="text-xs text-base-content/70 mt-1 block">{{ rec.author }}</span>
-              </div>
-            </div>
           </div>
         </div>
       </div>
     </aside>
   </div>
+  <div v-else class="text-center py-20 text-xl font-bold">文章不存在或加载失败</div>
 </template>

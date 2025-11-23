@@ -70,4 +70,7 @@ public class Article {
 
     @Column(nullable = false)
     private int favoritesCount = 0;
+
+    @Column(length = 2048)
+    private String coverImageUrl;
 }

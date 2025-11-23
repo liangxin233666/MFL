@@ -20,6 +20,8 @@ public record NewArticleRequest(@Valid @NotNull ArticleDto article) {
             @NotBlank(message = "body cannot be empty")
             String body,
 
+            String coverImageUrl,
+
             List<String> tagList
     ) {
         public ArticleDto {

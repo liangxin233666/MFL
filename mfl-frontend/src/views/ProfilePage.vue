@@ -1,75 +1,212 @@
 <script setup lang="ts">
-import { ref } from 'vue';
-import { PlusIcon } from '@heroicons/vue/24/solid';
+import { ref, onMounted, computed, watch } from 'vue';
+import { useRoute } from 'vue-router';
+import { useAuthStore } from '../stores/auth';
+import { PlusIcon, CheckIcon } from '@heroicons/vue/24/solid';
+import apiClient from '../api/apiClient';
+import type { Profile, Article } from '../types/api';
 import ArticlePreview from '../components/ArticlePreview.vue';
 
-const user = ref({
-  username: '电磁炮打蚊子',
-  avatar: 'https://i.pravatar.cc/150?u=a042581f4e29026704d',
-  banner: 'https://picsum.photos/seed/profile-banner/1200/300',
-  bio: '知名游戏区UP主，分享最新最热的游戏资讯和攻略。',
-  followers: 1250000,
-  following: 89,
+// 1. --- 初始化状态和路由 ---
+const route = useRoute();
+const authStore = useAuthStore();
+
+const profile = ref<Profile | null>(null);
+const articles = ref<Article[]>([]);
+const activeTab = ref<'author' | 'favorited'>('author'); // 'author' for posts, 'favorited' for collections
+
+const isLoadingProfile = ref(true);
+const isLoadingArticles = ref(false);
+const isFollowing = ref(false);
+
+const currentPage = ref(0);
+const articlesPerPage = 8; // 每页加载8篇文章
+const hasMore = ref(true);
+
+// 2. --- 计算属性 ---
+const isOwnProfile = computed(() => {
+  return authStore.user?.username === profile.value?.username;
+});
+const profileUsername = computed(() => route.params.username as string);
+
+// 3. --- API 调用函数 ---
+const fetchProfile = async (username: string) => {
+  try {
+    const response = await apiClient.get<{ profile: Profile }>(`/profiles/${username}`);
+    profile.value = response.data.profile;
+  } catch (error) {
+    console.error("获取个人资料失败:", error);
+  }
+};
+
+const fetchArticles = async (username: string, tab: 'author' | 'favorited', page: number) => {
+  if (isLoadingArticles.value) return;
+  isLoadingArticles.value = true;
+
+  const offset = page * articlesPerPage;
+  let apiUrl = `/articles?limit=${articlesPerPage}&offset=${offset}`;
+
+  // 根据 tab 构建不同的 API URL
+  if (tab === 'author') {
+    apiUrl += `&author=${username}`;
+  } else {
+    apiUrl += `&favoritedBy=${username}`;
+  }
+
+  try {
+    const response = await apiClient.get<{ articles: Article[], articlesCount: number }>(apiUrl);
+
+    if (page === 0) {
+      // 如果是第一页，直接替换
+      articles.value = response.data.articles;
+    } else {
+      // 否则，追加到现有列表
+      articles.value.push(...response.data.articles);
+    }
+
+    // 判断是否还有更多文章
+    hasMore.value = articles.value.length < response.data.articlesCount;
+    currentPage.value = page;
+
+  } catch (error) {
+    console.error(`获取[${tab}]文章列表失败:`, error);
+  } finally {
+    isLoadingArticles.value = false;
+  }
+};
+
+// 4. --- 交互逻辑 ---
+const loadMore = () => {
+  if (hasMore.value && profile.value) {
+    fetchArticles(profile.value.username, activeTab.value, currentPage.value + 1);
+  }
+};
+
+const changeTab = (tab: 'author' | 'favorited') => {
+  if (activeTab.value === tab) return;
+
+  activeTab.value = tab;
+  // 重置文章列表和分页状态
+  articles.value = [];
+  currentPage.value = 0;
+  hasMore.value = true;
+  // 重新加载第一页数据
+  if (profile.value) {
+    fetchArticles(profile.value.username, tab, 0);
+  }
+};
+
+const toggleFollow = async () => {
+  if (!authStore.isAuthenticated || !profile.value) return;
+  isFollowing.value = true;
+  const wasFollowing = profile.value.following;
+  profile.value.following = !wasFollowing; // Optimistic update
+
+  try {
+    const { username } = profile.value;
+    if (wasFollowing) {
+      await apiClient.delete(`/profiles/${username}/follow`);
+    } else {
+      await apiClient.post(`/profiles/${username}/follow`, {});
+    }
+  } catch (error) {
+    profile.value.following = wasFollowing; // Revert on failure
+    alert('操作失败');
+  } finally {
+    isFollowing.value = false;
+  }
+};
+
+// 5. --- 生命周期钩子和侦听器 ---
+onMounted(async () => {
+  isLoadingProfile.value = true;
+  await fetchProfile(profileUsername.value);
+  isLoadingProfile.value = false;
+  await fetchArticles(profileUsername.value, activeTab.value, 0);
 });
 
-const articles = ref([
-  { slug: 'game-report-1', imageUrl: 'https://picsum.photos/seed/p1/400/225', author: '电磁炮打蚊子', avatar: user.value.avatar, title: '【游戏速报】大的要来了！万众期待的XXX续作发布预告', viewsCount: 320000, commentsCount: 1200 },
-  { slug: 'game-guide-2', imageUrl: 'https://picsum.photos/seed/p2/400/225', author: '电磁炮打蚊子', avatar: user.value.avatar, title: '十分钟上手！从萌新到高手的保姆级教程', viewsCount: 189000, commentsCount: 854 },
-  { slug: 'game-story-3', imageUrl: 'https://picsum.photos/seed/p3/400/225', author: '电磁炮打蚊子', avatar: user.value.avatar, title: '剧情解析：你真的看懂这个结局了吗？', viewsCount: 450000, commentsCount: 2300 },
-]);
+// **关键**：侦听路由参数变化（例如从一个人的主页跳转到另一个人的主页）
+watch(profileUsername, async (newUsername) => {
+  isLoadingProfile.value = true;
+  activeTab.value = 'author';
+  articles.value = [];
+  currentPage.value = 0;
+  hasMore.value = true;
 
-const activeTab = ref('articles');
+  await fetchProfile(newUsername);
+  isLoadingProfile.value = false;
+  await fetchArticles(newUsername, 'author', 0);
+});
 </script>
 
 <template>
-  <div>
+  <div v-if="isLoadingProfile" class="text-center py-20"><span class="loading loading-spinner loading-lg"></span></div>
+  <div v-else-if="profile">
     <!-- 用户信息横幅 -->
     <div class="card shadow-md overflow-hidden mb-8">
       <figure class="h-48">
-        <img :src="user.banner" alt="User Banner" class="w-full h-full object-cover" />
+        <img :src="`https://picsum.photos/seed/${profile.username}/1200/300`" alt="User Banner" class="w-full h-full object-cover" />
       </figure>
       <div class="card-body p-4 bg-base-100">
         <div class="flex items-start gap-4">
           <div class="avatar -mt-16">
             <div class="w-24 h-24 rounded-full ring ring-pink-500 ring-offset-base-100 ring-offset-2">
-              <img :src="user.avatar" />
+              <img :src="profile.image || `https://source.boringavatars.com/beam/120/${profile.username}`" />
             </div>
           </div>
           <div class="flex-grow">
-            <h1 class="text-2xl font-bold">{{ user.username }}</h1>
-            <p class="text-sm text-base-content/70 mt-1">{{ user.bio }}</p>
-            <div class="flex gap-4 text-sm mt-2">
-              <span><span class="font-bold">{{ (user.following) }}</span> 关注</span>
-              <span><span class="font-bold">{{ (user.followers / 10000).toFixed(1) }}万</span> 粉丝</span>
-            </div>
+            <h1 class="text-2xl font-bold">{{ profile.username }}</h1>
+            <p class="text-sm text-base-content/70 mt-1">{{ profile.bio || '这位用户什么也没留下...' }}</p>
           </div>
-          <div class="self-start">
-            <button class="btn bg-pink-500 hover:bg-pink-600 text-white btn-sm">
-              <PlusIcon class="w-4 h-4" />
-              关注
+          <div v-if="!isOwnProfile" class="self-start">
+            <button
+                @click="toggleFollow"
+                :disabled="isFollowing"
+                class="btn btn-sm gap-1"
+                :class="{ 'bg-pink-500 text-white': !profile.following, 'btn-outline': profile.following }"
+            >
+              <span v-if="isFollowing" class="loading loading-spinner loading-xs"></span>
+              <CheckIcon v-else-if="profile.following" class="w-4 h-4" />
+              <PlusIcon v-else class="w-4 h-4"/>
+              {{ isFollowing ? '...' : (profile.following ? '已关注' : '关注') }}
             </button>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- 内容区域 -->
+    <!-- Tab 切换 -->
     <div role="tablist" class="tabs tabs-bordered tabs-lg">
-      <a role="tab" class="tab" :class="{'tab-active text-pink-500': activeTab === 'articles'}" @click="activeTab = 'articles'">我的投稿</a>
-      <a role="tab" class="tab" :class="{'tab-active text-pink-500': activeTab === 'favorites'}" @click="activeTab = 'favorites'">我的收藏</a>
+      <a role="tab" class="tab" :class="{'tab-active text-pink-500': activeTab === 'author'}" @click="changeTab('author')">投稿</a>
+      <a role="tab" class="tab" :class="{'tab-active text-pink-500': activeTab === 'favorited'}" @click="changeTab('favorited')">收藏</a>
     </div>
 
     <!-- 文章列表 -->
-    <div v-if="activeTab === 'articles'" class="mt-6">
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-        <router-link v-for="(article, index) in articles" :key="index" :to="'/article/' + article.slug">
-          <ArticlePreview v-bind="article"/>
+    <div class="mt-6">
+      <div v-if="articles.length > 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+        <router-link v-for="article in articles" :key="article.slug" :to="'/article/' + article.slug">
+          <ArticlePreview
+              :image-url="`https://picsum.photos/seed/${article.slug}/400/225`"
+              :title="article.title"
+              :views-count="article.favoritesCount || 0"
+              :comments-count="0"
+              :author="article.author"
+              :article-slug="article.slug"
+          />
         </router-link>
       </div>
+      <div v-if="!isLoadingArticles && articles.length === 0" class="text-center text-base-content/50 py-10">
+        {{ activeTab === 'author' ? '这里空空如也，还没有任何投稿哦~' : '这里空空如也，还没有任何收藏哦~' }}
+      </div>
     </div>
-    <!-- 收藏列表 -->
-    <div v-if="activeTab === 'favorites'" class="mt-6 text-center text-base-content/50 py-10">
-      这里是收藏的视频和文章~
+
+    <!-- 加载更多 -->
+    <div class="text-center mt-8" v-if="hasMore">
+      <button class="btn" @click="loadMore" :disabled="isLoadingArticles">
+        <span v-if="isLoadingArticles" class="loading loading-spinner"></span>
+        加载更多
+      </button>
     </div>
   </div>
+  <div v-else class="text-center py-20 font-bold text-xl">用户不存在或加载失败</div>
 </template>

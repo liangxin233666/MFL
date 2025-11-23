@@ -1,0 +1,92 @@
+# -----------------------------------------------------------------------------
+# My Full-stack Legacy (MFL) - 本地开发环境 (优化版)
+# -----------------------------------------------------------------------------
+# - PostgreSQL: 16
+# - Redis: 7.2-alpine
+# - MinIO: 最新稳定版
+#
+# 使用 "docker-compose up -d" 启动所有服务.
+# 使用 "docker-compose down --volumes" 停止并彻底移除所有容器和数据卷.
+# -----------------------------------------------------------------------------
+
+services:
+  # 服务1: PostgreSQL 数据库
+  postgres:
+    image: postgres:16
+    container_name: mfl-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: mfl_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - mfl-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mfl_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 服务2: Redis 缓存
+  redis:
+    image: redis:7.2-alpine
+    container_name: mfl-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - mfl-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 服务3: MinIO 对象存储
+  minio:
+    # 官方推荐使用 quay.io 作为镜像源
+    image: quay.io/minio/minio
+    container_name: mfl-minio
+    restart: unless-stopped
+    environment:
+      # 为了安全，建议在生产环境中通过环境变量文件或 secrets 管理凭证
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      # API 端口
+      - "9000:9000"
+      # 控制台 UI 端口
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - mfl-network
+    # 启动 MinIO 服务并开放控制台
+    command: server /data --console-address ":9001"
+    healthcheck:
+      # 使用 MinIO 客户端 (mc) 进行健康检查更为可靠
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+# 定义一个共享网络，以便服务之间可以通过名称互相访问
+networks:
+  mfl-network:
+    driver: bridge
+
+# 数据卷定义，用于持久化存储数据
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  minio_data:
+    driver: local

@@ -1,24 +1,42 @@
+<!-- src/App.vue -->
 <script setup lang="ts">
-import { MagnifyingGlassIcon } from '@heroicons/vue/24/outline';
-import { ArrowUpOnSquareIcon } from '@heroicons/vue/24/solid';
+import { onMounted } from 'vue';
+import { useAuthStore } from './stores/auth';
+
+import {
+  MagnifyingGlassIcon,
+  BellIcon,
+  StarIcon,
+  ClockIcon,
+  RectangleStackIcon,
+  ArrowUpOnSquareIcon,
+  UserCircleIcon,
+  Cog6ToothIcon,
+  ArrowLeftStartOnRectangleIcon,
+} from '@heroicons/vue/24/outline';
+
+const authStore = useAuthStore();
+
+onMounted(() => {
+  authStore.checkAuth();
+});
+
+const handleLogout = () => {
+  authStore.logout();
+};
 </script>
 
 <template>
   <div class="flex flex-col min-h-screen bg-base-200/50 font-sans">
     <header class="bg-base-100/80 backdrop-blur sticky top-0 z-50 border-b border-base-200">
       <div class="navbar container mx-auto py-1 min-h-fit">
-        <!-- 导航栏左侧 -->
+
         <div class="navbar-start">
           <router-link to="/" class="btn btn-ghost text-2xl font-black normal-case text-pink-500 hover:bg-transparent">
-            bilibili
+            RealWorld
           </router-link>
-          <ul class="menu menu-horizontal px-1 font-medium hidden sm:flex">
-            <li><router-link to="/" active-class="text-pink-500">首页</router-link></li>
-            <li><router-link to="/login" active-class="text-pink-500">登录</router-link></li>
-          </ul>
         </div>
 
-        <!-- 导航栏中间 -->
         <div class="navbar-center hidden lg:flex">
           <div class="relative w-96">
             <input type="text" placeholder="搜点好东西..." class="input input-bordered h-9 w-full rounded-lg bg-base-200 focus:bg-base-100 focus:border-pink-500 transition-all" />
@@ -27,45 +45,94 @@ import { ArrowUpOnSquareIcon } from '@heroicons/vue/24/solid';
         </div>
 
         <div class="navbar-end">
-          <div class="dropdown dropdown-end dropdown-hover">
-            <!-- 头像触发器 -->
-            <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar">
-              <div class="w-10 rounded-full">
-                <img src="https://i.pravatar.cc/150?u=a042581f4e29026704d" alt="User avatar" />
+
+          <div v-if="authStore.isAuthenticated && authStore.user" class="flex items-center gap-x-2">
+            <a href="#" class="btn btn-ghost btn-circle hidden sm:inline-flex">
+              <div class="flex flex-col items-center">
+                <div class="indicator">
+                  <BellIcon class="h-6 w-6" />
+                  <span class="badge badge-xs badge-primary indicator-item bg-pink-500 border-none text-white"></span>
+                </div>
+                <span class="text-xs">通知</span>
+              </div>
+            </a>
+
+            <router-link
+                to="/feed"
+                class="btn btn-ghost btn-circle hidden sm:inline-flex"
+                active-class="text-pink-500"
+            >
+            <div class="flex flex-col items-center justify-center">
+              <RectangleStackIcon class="h-6 w-6" />
+              <span class="text-xs mt-0.5">动态</span>
+            </div>
+            </router-link>
+
+            <a href="#" class="btn btn-ghost btn-circle hidden sm:inline-flex">
+              <div class="flex flex-col items-center">
+                <StarIcon class="h-6 w-6" />
+                <span class="text-xs">收藏</span>
+              </div>
+            </a>
+            <a href="#" class="btn btn-ghost btn-circle hidden sm:inline-flex">
+              <div class="flex flex-col items-center">
+                <ClockIcon class="h-6 w-6" />
+                <span class="text-xs">历史</span>
+              </div>
+            </a>
+
+            <router-link to="/editor" class="btn bg-pink-500 hover:bg-pink-600 text-white rounded-lg hidden sm:inline-flex mx-2">
+              <ArrowUpOnSquareIcon class="h-5 w-5" />
+              投稿
+            </router-link>
+
+            <div class="dropdown dropdown-end dropdown-hover">
+              <router-link :to="'/profile/' + authStore.user.username" tabindex="0" role="button" class="btn btn-ghost btn-circle avatar">
+                <div class="w-10 rounded-full">
+                  <img :src="authStore.userImage" alt="User avatar" />
+                </div>
+              </router-link>
+              <div tabindex="0" class="dropdown-content z-[1] p-4 shadow-xl bg-base-100 rounded-box w-72">
+                <div class="text-center">
+                  <h3 class="font-bold text-lg">{{ authStore.user.username }}</h3>
+                </div>
+                <div class="divider my-2"></div>
+                <ul class="menu menu-sm">
+                  <li>
+                    <router-link :to="'/profile/' + authStore.user.username">
+                      <UserCircleIcon class="w-5 h-5"/> 个人中心
+                    </router-link>
+                  </li>
+                  <li>
+                    <router-link to="/settings">
+                      <Cog6ToothIcon class="w-5 h-5"/> 设置
+                    </router-link>
+                  </li>
+                  <div class="divider my-1"></div>
+                  <li>
+                    <a @click.prevent="handleLogout">
+                      <ArrowLeftStartOnRectangleIcon class="w-5 h-5"/> 退出登录
+                    </a>
+                  </li>
+                </ul>
               </div>
             </div>
-            <!-- 下拉菜单内容 -->
-            <ul tabindex="0" class="dropdown-content menu menu-sm z-[1] mt-3 p-2 shadow bg-base-100 rounded-box w-52">
-              <li>
-                <router-link to="/editor" class="font-bold text-pink-500 hover:!text-pink-500">
-                  <ArrowUpOnSquareIcon class="w-5 h-5"/>
-                  投稿
-                </router-link>
-              </li>
-              <li class="border-t my-1 border-base-200/50"></li>
-              <li><router-link to="/profile/diancipaodawenzi">个人主页</router-link></li>
-              <li><router-link to="/settings">设置</router-link></li>
-              <li class="border-t my-1 border-base-200/50"></li>
-              <li><a>退出登录</a></li>
-            </ul>
+          </div>
+
+          <div v-else class="flex items-center gap-x-3">
+            <router-link to="/login" class="btn btn-ghost rounded-lg">登录</router-link>
+            <router-link to="/register" class="btn bg-pink-500 hover:bg-pink-600 text-white rounded-lg">
+              注册
+            </router-link>
           </div>
         </div>
+
       </div>
     </header>
 
-    <!-- 主体内容区域 -->
     <main class="flex-grow py-8">
-      <div class="container mx-auto">
-        <router-view></router-view>
-      </div>
+      <router-view></router-view>
     </main>
 
   </div>
 </template>
-
-<!-- 添加一个全局字体样式，让界面更好看 -->
-<style>
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-}
-</style>
