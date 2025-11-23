@@ -11,6 +11,7 @@ import org.springframework.scheduling.annotation.EnableAsync;
 @SpringBootApplication
 @EnableConfigurationProperties(StorageProperties.class)
 @EnableAsync
+
 public class MflApplication {
 
 	public static void main(String[] args) {

@@ -1,6 +1,7 @@
 package io.github.liangxin233666.mfl.services;
 
 import io.github.liangxin233666.mfl.config.StorageProperties;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -13,6 +14,7 @@ import java.time.Duration;
 import java.util.*;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class FileStorageService {
 
@@ -99,8 +101,8 @@ public class FileStorageService {
             String finalUrl = storageProperties.publicBaseUrl() + "/" + finalKey;
             return Optional.of(Map.entry(tempUrl, finalUrl));
         } catch (Exception e) {
-            // 在实际项目中，这里应该记录详细的错误日志
-            // log.error("Failed to promote file: {}", tempUrl, e);
+
+            log.error("Failed to promote file: {}", tempUrl, e);
             return Optional.empty(); // 失败的文件将被忽略，后续由生命周期策略清理
         }
     }
@@ -136,7 +138,7 @@ public class FileStorageService {
                 }
             } catch (Exception e) {
                 // 在异步任务中，日志记录至关重要
-                // log.error("Async deletion failed for url: {}", url, e);
+                log.error("Async deletion failed for url: {}", url, e);
             }
         });
     }
