@@ -1,10 +1,7 @@
 package io.github.liangxin233666.mfl.dtos;
 
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.*;
 
 public record UpdateUserRequest(@Valid @NotNull UserDto user) {
     public record UserDto(
@@ -13,13 +10,17 @@ public record UpdateUserRequest(@Valid @NotNull UserDto user) {
             String email,
 
             // Password 可选，但如果存在，则长度必须至少为 8
+            @Pattern(regexp = "(^$)|(.*\\S+.*)", message = "密码不能只包含空白字符")
             @Size(min = 8, message = "password must be at least 8 characters long")
             String password,
 
-            @NotBlank(message = "Username can't be blank")
+            @Pattern(regexp = ".*\\S+.*", message = "用户名不能只包含空白字符")
             String username,
 
+            @Pattern(regexp = "(^$)|(.*\\S+.*)", message = "描述信息不能只包含空白字符")
             String bio,
+
+            @Pattern(regexp = "(^$)|(.*\\S+.*)", message = "图片url不能只包含空白字符")
             String image
     )
     { public UserDto

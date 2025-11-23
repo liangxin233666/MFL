@@ -22,6 +22,8 @@ import org.springframework.security.access.AccessDeniedException;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.CacheEvict;
@@ -34,12 +36,21 @@ public class ArticleService {
     private final UserRepository userRepository;
     private final TagRepository tagRepository;
     private final Slugify slugify;
+    private final FileStorageService fileStorageService;
 
-    public ArticleService(ArticleRepository articleRepository, UserRepository userRepository, TagRepository tagRepository) {
+
+    private static final Pattern TEMP_URL_PATTERN = Pattern.compile("https://?[^\\s\"]*/uploads/temp/[^\\s\")]+");
+
+    private static final String URL_REGEX = "\\b(https?|ftp|file)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[-a-zA-Z0-9+&@#/%=~_|]";
+    private static final Pattern URL_PATTERN = Pattern.compile(URL_REGEX);
+
+
+    public ArticleService(ArticleRepository articleRepository, UserRepository userRepository, TagRepository tagRepository, FileStorageService fileStorageService) {
         this.articleRepository = articleRepository;
         this.userRepository = userRepository;
         this.tagRepository = tagRepository;
         this.slugify = Slugify.builder().build();
+        this.fileStorageService = fileStorageService;
     }
 
     @Transactional
@@ -50,15 +61,29 @@ public class ArticleService {
 
         Set<Tag> tags = processTagsEfficiently(new HashSet<>(request.article().tagList()));
 
+        List<String> tempUrls = new ArrayList<>();
+        String coverImageUrl = request.article().coverImageUrl();
+        if (coverImageUrl != null) {
+            tempUrls.add(coverImageUrl);
+        }
+        tempUrls.addAll(extractTempUrlsFromMarkdown(request.article().body()));
+
+        // 2. 调用服务进行转正
+        Map<String, String> urlMapping = fileStorageService.promoteFiles(tempUrls);
+
+        // 3. 替换文章内容和封面中的URL为永久URL
+        String finalBody = replaceUrls(request.article().body(), urlMapping);
+        String finalCoverImageUrl = replaceUrls(coverImageUrl, urlMapping);
+
         Article article = new Article();
         article.setAuthor(author);
         article.setTitle(request.article().title());
         article.setDescription(request.article().description());
-        article.setBody(request.article().body());
+        article.setBody(finalBody);
         article.setTags(tags);
 
         article.setSlug(generateUniqueSlug(request.article().title()));
-
+        article.setCoverImageUrl(finalCoverImageUrl);
 
         Article savedArticle = articleRepository.save(article);
 
@@ -139,13 +164,13 @@ public class ArticleService {
                 article.getUpdatedAt(),
                 isFavorited,
                 favoritesCount,
+                article.getCoverImageUrl(),
                 authorProfile
         );
 
         return new ArticleResponse(articleDto);
     }
 
-    //回复大概信息
     private ArticleResponse buildArticleResponseSimply(Article article) {
         User author = article.getAuthor();
         ProfileResponse.ProfileDto authorProfile = new ProfileResponse.ProfileDto(
@@ -164,12 +189,42 @@ public class ArticleService {
                 article.getCreatedAt(),
                 article.getUpdatedAt(),
                 null,
-                null,
+                article.getFavoritesCount(),
+                article.getCoverImageUrl(),
                 authorProfile
         );
 
         return new ArticleResponse(articleDto);
     }
+
+    //回复大概信息
+    private ArticleResponse buildArticleResponseSimply(Article article,Boolean isFavorited) {
+        User author = article.getAuthor();
+        ProfileResponse.ProfileDto authorProfile = new ProfileResponse.ProfileDto(
+                author.getUsername(),
+                null,
+                author.getImage(),
+                null
+        );
+
+        ArticleResponse.ArticleDto articleDto = new ArticleResponse.ArticleDto(
+                article.getSlug(),
+                article.getTitle(),
+                article.getDescription(),
+                null,
+                null,
+                article.getCreatedAt(),
+                article.getUpdatedAt(),
+                isFavorited,
+                article.getFavoritesCount(),
+                article.getCoverImageUrl(),
+                authorProfile
+        );
+
+        return new ArticleResponse(articleDto);
+    }
+
+
 
     private User findUserById(Long id) {
         return userRepository.findById(id).orElseThrow(() -> new  ResourceNotFoundException("User not found for id: " + id));
@@ -193,11 +248,12 @@ public class ArticleService {
     public ArticleResponse favoriteArticle(String slug, UserDetails currentUserDetails) {
         Article article = findArticleBySlug(slug);
         User currentUser = findUserById(Long.valueOf(currentUserDetails.getUsername()));
+
         if (!article.getFavoritedBy().contains(currentUser)) {
             article.getFavoritedBy().add(currentUser);
             article.setFavoritesCount(article.getFavoritesCount() + 1);
         }
-        return buildArticleResponseSimply(article);
+        return buildArticleResponseSimply(article,true);
     }
 
     @Transactional
@@ -220,7 +276,8 @@ public class ArticleService {
     }
 
 
-    @Cacheable(value = "articles", key = "#slug")
+
+    //@Cacheable(value = "articles", key = "#slug")
     @Transactional(readOnly = true)
     public ArticleResponse getArticleBySlug(String slug, UserDetails currentUserDetails) {
         Article article = findArticleBySlug(slug);
@@ -234,37 +291,71 @@ public class ArticleService {
 
     @CacheEvict(value = "articles", key = "#slug")
     @Transactional
-    public ArticleResponse updateArticle(String slug, @Valid UpdateArticleRequest request, UserDetails currentUserDetails) {
+    public ArticleResponse updateArticle(String slug, UpdateArticleRequest request, UserDetails currentUserDetails) {
+        // 1. 查找实体并进行权限校验
         Article article = findArticleBySlug(slug);
         User currentUser = findUserById(Long.valueOf(currentUserDetails.getUsername()));
-
 
         if (!article.getAuthor().equals(currentUser)) {
             throw new AccessDeniedException("You are not the author of this article.");
         }
 
+        // 2. [快照] 保存更新前的所有图片URL，用于后续对比
+        List<String> oldUrls = extractAllUrls(
+                article.getBody(),
+                article.getCoverImageUrl()
+        );
 
-        //只要传进来的title不为空，slug就会变
-        if (request.article().title() != null) {
+        // 3. [转正] 处理新上传的临时图片
+        List<String> newTempUrls = extractTempUrls(
+                request.article().body(),
+                request.article().coverImageUrl()
+        );
+        Map<String, String> urlMapping = fileStorageService.promoteFiles(newTempUrls);
+
+        // 4. [更新实体] 将请求中的数据更新到article对象
+        // a. 处理标题和Slug
+        if (request.article().title() != null && !request.article().title().equals(article.getTitle())) {
             article.setTitle(request.article().title());
-
             article.setSlug(generateUniqueSlug(request.article().title()));
         }
-
+        // b. 处理描述
         if (request.article().description() != null) {
             article.setDescription(request.article().description());
         }
+        // c. 处理正文，并将临时URL替换为永久URL
         if (request.article().body() != null) {
-            article.setBody(request.article().body());
+            String finalBody = replaceUrls(request.article().body(), urlMapping);
+            article.setBody(finalBody);
+        }
+        // d. 处理封面图，并将临时URL替换为永久URL
+        if (request.article().coverImageUrl() != null) {
+            String finalCoverUrl = replaceUrls(request.article().coverImageUrl(), urlMapping);
+            article.setCoverImageUrl(finalCoverUrl);
         }
 
+        // 5. [保存] 将更新后的文章保存到数据库
         Article updatedArticle = articleRepository.save(article);
-        return buildArticleResponseSimply(updatedArticle);
+
+        // 6. [对比与清理] 计算出被删除的URL，并提交异步删除任务
+        List<String> newUrls = extractAllUrls(
+                updatedArticle.getBody(),
+                updatedArticle.getCoverImageUrl()
+        );
+
+        oldUrls.removeAll(newUrls); // 计算差集，剩下的是需要被删除的孤儿URL
+
+        if (!oldUrls.isEmpty()) {
+            fileStorageService.deleteFilesAsync(oldUrls);
+        }
+
+        // 7. [返回] 构建并返回最终的响应
+        return buildArticleResponse(updatedArticle, currentUser);
     }
 
     //注意，这个是类似b站的返回多篇文章的简要，所以一些信息没有
     @Transactional(readOnly = true)
-    public MultipleArticlesResponse getArticles(String tag, String author, String favoritedBy, Pageable pageable, UserDetails currentUserDetails) {
+    public MultipleArticlesResponse getArticles(String tag, String author, String favoritedBy, Pageable pageable) {
 
         // 1. 构建动态查询条件 (Specification)
         Specification<Article> spec = (root, query, criteriaBuilder) -> criteriaBuilder.conjunction();
@@ -287,6 +378,7 @@ public class ArticleService {
 
         return new MultipleArticlesResponse(articleDtos, articlePage.getTotalElements());
     }
+
 
 
     //同时，简要信息
@@ -326,12 +418,66 @@ public class ArticleService {
     private Specification<Article> favoritedBy(String username) {
         return (root, query, criteriaBuilder) -> {
 
-            User user = userRepository.findByUsername(username)
-                    .orElseThrow(() -> new  ResourceNotFoundException("User not found: " + username));
             Join<Article, User> favoritedByJoin = root.join("favoritedBy");
-            return criteriaBuilder.equal(favoritedByJoin.get("id"), user.getId());
+
+
+            return criteriaBuilder.equal(favoritedByJoin.get("username"), username);
         };
     }
 
+    private Specification<Article> favoriting(UserDetails currentUserDetails) {
+        return (root, query, criteriaBuilder) -> {
+
+            Join<Article, User> favoritedByJoin = root.join("favoritedBy");
+
+            return criteriaBuilder.equal(favoritedByJoin.get("id"), currentUserDetails.getUsername());
+        };
+    }
+
+    private List<String> extractTempUrlsFromMarkdown(String markdown) {
+        if (markdown == null || markdown.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<String> tempUrls = new ArrayList<>();
+        Matcher matcher = TEMP_URL_PATTERN.matcher(markdown);
+        while (matcher.find()) {
+            tempUrls.add(matcher.group());
+        }
+        return tempUrls;
+    }
+
+    private String replaceUrls(String text, Map<String, String> urlMapping) {
+        if (text == null || urlMapping == null || urlMapping.isEmpty()) {
+            return text;
+        }
+        for (Map.Entry<String, String> entry : urlMapping.entrySet()) {
+            text = text.replace(entry.getKey(), entry.getValue());
+        }
+        return text;
+    }
+
+    private List<String> extractAllUrls(String body, String coverUrl) {
+        return extractUrls(body, coverUrl);
+    }
+
+    private List<String> extractUrls(String... texts) {
+        if (texts == null || texts.length == 0) {
+            return Collections.emptyList();
+        }
+        List<String> urls = new ArrayList<>();
+        for (String text : texts) {
+            if(text == null || text.isEmpty()) continue;
+            Matcher matcher = URL_PATTERN.matcher(text);
+            while (matcher.find()) {
+                urls.add(matcher.group());
+            }
+        }
+        return urls;
+    }
+    private List<String> extractTempUrls(String body, String coverUrl) {
+        return extractUrls(body, coverUrl).stream()
+                .filter(url -> url.contains("/uploads/temp/"))
+                .collect(Collectors.toList());
+    }
 
 }

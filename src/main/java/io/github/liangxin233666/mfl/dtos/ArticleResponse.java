@@ -1,11 +1,16 @@
 package io.github.liangxin233666.mfl.dtos;
 
+import lombok.Getter;
+import lombok.Setter;
+
 import java.time.OffsetDateTime;
 import java.util.List;
 
 
+
 public record ArticleResponse(ArticleDto article) {
     // 复用ProfileDto
+
     public record ArticleDto(
             String slug,
             String title,
@@ -16,6 +21,7 @@ public record ArticleResponse(ArticleDto article) {
             OffsetDateTime updatedAt,
             Boolean favorited,
             Integer favoritesCount,
+            String coverImageUrl,
             ProfileResponse.ProfileDto author
     ) {}
 }

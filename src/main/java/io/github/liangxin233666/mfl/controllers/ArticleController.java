@@ -80,10 +80,10 @@ public class ArticleController {
             @RequestParam(name = "author", required = false) String author,
 
             @RequestParam(name = "favoritedBy", required = false) String favoritedBy,
-            @PageableDefault(size = 20) Pageable pageable,
-            @AuthenticationPrincipal UserDetails currentUser) {
+            @PageableDefault(size = 20) Pageable pageable
+            ) {
 
-        MultipleArticlesResponse response = articleService.getArticles(tag, author, favoritedBy, pageable, currentUser);
+        MultipleArticlesResponse response = articleService.getArticles(tag, author, favoritedBy,pageable);
         return ResponseEntity.ok(response);
     }
 

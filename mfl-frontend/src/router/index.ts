@@ -6,7 +6,9 @@ import RegisterPage from '../views/RegisterPage.vue';
 import SettingsPage from '../views/SettingsPage.vue';
 import ProfilePage from '../views/ProfilePage.vue';         // 必须导入
 import ArticleDetailPage from '../views/ArticleDetailPage.vue';
-import EditorPage from '../views/EditorPage.vue';           // 必须导入
+import EditorPage from '../views/EditorPage.vue';
+import FeedPage from "../views/FeedPage.vue";           // 必须导入
+
 
 const routes: Array<RouteRecordRaw> = [
     { path: '/', name: 'Home', component: HomePage },
@@ -30,11 +32,17 @@ const routes: Array<RouteRecordRaw> = [
         name: 'ArticleEdit',
         component: EditorPage
     },
+    {
+        path: '/feed',
+        name: 'Feed',
+        component: FeedPage,
+    },
 ];
 
 const router = createRouter({
     history: createWebHistory(),
     routes,
 });
+
 
 export default router;

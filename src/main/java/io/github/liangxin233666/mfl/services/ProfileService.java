@@ -41,6 +41,9 @@ public class ProfileService {
         User userToFollow = findUserByUsername(username);
         User currentUser = findUserById(Long.valueOf(currentUserDetails.getUsername()));
 
+        if(username.equals(currentUser.getUsername()))
+            return buildProfileResponse(userToFollow, false);
+
         currentUser.getFollowing().add(userToFollow);
         userRepository.save(currentUser);
 

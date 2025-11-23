@@ -1,11 +1,11 @@
 package io.github.liangxin233666.mfl.entities;
 
 import jakarta.persistence.*;
+import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.hibernate.annotations.BatchSize;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.annotations.*;
+
 import java.time.OffsetDateTime;
 import java.util.HashSet;
 import java.util.Set;
@@ -40,6 +40,8 @@ public class User {
     @Column(nullable = false, columnDefinition = "TIMESTAMPTZ")
     private OffsetDateTime updatedAt;
 
+
+    //用 Hibernate.size()
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
             name = "user_follows",
@@ -49,6 +51,7 @@ public class User {
     private Set<User> following= new HashSet<>();
 
     @ManyToMany(mappedBy = "following", fetch = FetchType.LAZY)
+    //用 Hibernate.size()
     private Set<User> followers = new HashSet<>();
 
 }

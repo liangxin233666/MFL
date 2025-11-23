@@ -50,4 +50,9 @@ public class Comment {
     @OneToMany(mappedBy = "parent", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
     @BatchSize(size = 25)
     private Set<Comment> replies = new HashSet<>();
+
+    //顶层评论
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "root_id")
+    private Comment root;
 }
