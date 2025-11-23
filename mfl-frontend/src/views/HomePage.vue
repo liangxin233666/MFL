@@ -95,7 +95,7 @@ const fetchTags = async () => {
             <template v-for="article in articles.slice(0, 4)" :key="article.slug">
               <router-link v-if="article" :to="'/article/' + article.slug">
                 <ArticlePreview
-                    :image-url="`https://picsum.photos/seed/${article.slug}/400/225`"
+                    :image-url="article.coverImageUrl|| `https://picsum.photos/seed/${article.slug}/400/225`"
                     :title="article.title"
                     :views-count="article.favoritesCount || 0"
                     :comments-count="0"
@@ -123,7 +123,7 @@ const fetchTags = async () => {
             <template v-for="article in articles.slice(4)" :key="article.slug">
               <router-link v-if="article" :to="'/article/' + article.slug">
                 <ArticlePreview
-                    :image-url="`https://picsum.photos/seed/${article.slug}/400/225`"
+                    :image-url="article.coverImageUrl|| `https://picsum.photos/seed/${article.slug}/400/225`"
                     :title="article.title"
                     :views-count="article.favoritesCount || 0"
                     :comments-count="0"

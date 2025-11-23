@@ -5,18 +5,18 @@ import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/vue/24/solid';
 // 1. 模拟轮播图数据
 const slides = ref([
   {
-    image: 'https://picsum.photos/seed/carousel1/800/450',
-    title: '碧蓝航线：指挥官，中秋快乐！',
+    image: 'http://localhost:9000/realworld-media/assets/%E5%B1%8F%E5%B9%95%E6%88%AA%E5%9B%BE%202025-07-29%20232554.png',
+    title: '女仆炮姐？黑子狂喜！',
     buttonText: '立即前往',
   },
   {
-    image: 'https://picsum.photos/seed/carousel2/800/450',
-    title: '新赛季开启！挑战无尽的荣耀',
+    image: 'http://localhost:9000/realworld-media/assets/%E5%B1%8F%E5%B9%95%E6%88%AA%E5%9B%BE(126).png',
+    title: 'power!',
     buttonText: '查看详情',
   },
   {
-    image: 'https://picsum.photos/seed/carousel3/800/450',
-    title: '独家专访：幕后制作人的故事',
+    image: 'http://localhost:9000/realworld-media/assets/%E5%B1%8F%E5%B9%95%E6%88%AA%E5%9B%BE(54).png',
+    title: '次元斩·绝 对绝 审判',
     buttonText: '观看视频',
   },
 ]);
