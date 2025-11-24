@@ -8,13 +8,22 @@ import ProfilePage from '../views/ProfilePage.vue';         // 必须导入
 import ArticleDetailPage from '../views/ArticleDetailPage.vue';
 import EditorPage from '../views/EditorPage.vue';
 import FeedPage from "../views/FeedPage.vue";           // 必须导入
-
+import ContentManagePage from '../views/ContentManagePage.vue';
+import {useAuthStore} from "../stores/auth.ts";
 
 const routes: Array<RouteRecordRaw> = [
     { path: '/', name: 'Home', component: HomePage },
     { path: '/login', name: 'Login', component: LoginPage },
     { path: '/register', name: 'Register', component: RegisterPage },
-    { path: '/settings', name: 'Settings', component: SettingsPage },
+    { path: '/settings', name: 'Settings', component: SettingsPage ,
+        beforeEnter: () => {
+            const auth = useAuthStore();
+            // 已登录，返回 true 放行
+            if (auth.isAuthenticated) return true;
+            // 未登录，返回重定向路径
+            return '/login';
+        }
+    },
     {
         path: '/profile/:username',
         name: 'Profile',
@@ -25,7 +34,14 @@ const routes: Array<RouteRecordRaw> = [
     {
         path: '/editor',
         name: 'ArticleCreate',
-        component: EditorPage
+        component: EditorPage,
+        beforeEnter: () => {
+            const auth = useAuthStore();
+            // 已登录，返回 true 放行
+            if (auth.isAuthenticated) return true;
+            // 未登录，返回重定向路径
+            return '/login';
+        }
     },
     {
         path: '/editor/:slug',
@@ -36,6 +52,25 @@ const routes: Array<RouteRecordRaw> = [
         path: '/feed',
         name: 'Feed',
         component: FeedPage,
+        beforeEnter: () => {
+            const auth = useAuthStore();
+            // 已登录，返回 true 放行
+            if (auth.isAuthenticated) return true;
+            // 未登录，返回重定向路径
+            return '/login';
+        }
+    },
+    {
+        path: '/creator/content',
+        name: 'ContentManage',
+        component: ContentManagePage,
+        beforeEnter: () => {
+            const auth = useAuthStore();
+            // 已登录，返回 true 放行
+            if (auth.isAuthenticated) return true;
+            // 未登录，返回重定向路径
+            return '/login';
+        }
     },
 ];
 

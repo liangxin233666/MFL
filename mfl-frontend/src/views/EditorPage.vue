@@ -17,7 +17,7 @@ const imageUploaderInput = ref<HTMLInputElement | null>(null);
 const isEditMode = ref(false);
 const articleSlug = ref<string | null>(null);
 const isSubmitting = ref(false);
-// 注意：去掉了 activeTab，因为现在是双栏显示，不需要切换了
+
 
 const form = reactive({
   title: '',

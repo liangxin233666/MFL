@@ -2,7 +2,7 @@
 <script setup lang="ts">
 import { onMounted } from 'vue';
 import { useAuthStore } from './stores/auth';
-
+import { DocumentPlusIcon, Squares2X2Icon, VideoCameraIcon } from '@heroicons/vue/24/outline';
 import {
   MagnifyingGlassIcon,
   BellIcon,
@@ -81,10 +81,57 @@ const handleLogout = () => {
               </div>
             </a>
 
-            <router-link to="/editor" class="btn bg-pink-500 hover:bg-pink-600 text-white rounded-lg hidden sm:inline-flex mx-2">
-              <ArrowUpOnSquareIcon class="h-5 w-5" />
-              投稿
-            </router-link>
+            <!-- 找到导航栏右侧区域，替换原来的投稿按钮代码 -->
+
+            <div class="dropdown dropdown-hover dropdown-end">
+              <!--
+                1. 触发器改为 router-link
+                - role="button": 让样式看起来像按钮
+                - to="/editor": 点击直接跳转发布页
+                - tabindex="0": 配合 dropdown 使用，保证可访问性
+              -->
+              <router-link
+                  to="/editor"
+                  class="btn bg-pink-500 hover:bg-pink-600 text-white border-none gap-2 px-6 m-1"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                </svg>
+                投稿
+              </router-link>
+
+              <!--
+                2. 下拉菜单内容
+                - 放在同一个 div 内，鼠标移下来时仍然处于 hover 状态，不会消失
+              -->
+              <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow-lg bg-base-100 rounded-box w-52 border border-base-200">
+                <!-- 专栏投稿 (虽然按钮本身也能去，但菜单里保留一个明确选项符合B站习惯) -->
+                <li>
+                  <router-link to="/editor" class="py-3 font-bold hover:text-pink-500">
+                    <DocumentPlusIcon class="w-5 h-5"/>
+                    专栏投稿
+                  </router-link>
+                </li>
+
+                <!-- 视频投稿 (占位) -->
+                <li>
+                  <a class="py-3 text-base-content/50 cursor-not-allowed">
+                    <VideoCameraIcon class="w-5 h-5"/>
+                    视频投稿 (开发中)
+                  </a>
+                </li>
+
+                <div class="divider my-0"></div>
+
+                <!-- 投稿管理 -->
+                <li>
+                  <router-link to="/creator/content" class="py-3 hover:text-pink-500">
+                    <Squares2X2Icon class="w-5 h-5"/>
+                    投稿管理
+                  </router-link>
+                </li>
+              </ul>
+            </div>
 
             <div class="dropdown dropdown-end dropdown-hover">
               <router-link :to="'/profile/' + authStore.user.username" tabindex="0" role="button" class="btn btn-ghost btn-circle avatar">
