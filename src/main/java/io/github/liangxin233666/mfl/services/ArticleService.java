@@ -5,6 +5,7 @@ import io.github.liangxin233666.mfl.dtos.*;
 import io.github.liangxin233666.mfl.entities.Article;
 import io.github.liangxin233666.mfl.entities.Tag;
 import io.github.liangxin233666.mfl.entities.User;
+import io.github.liangxin233666.mfl.events.NotificationEvent;
 import io.github.liangxin233666.mfl.exceptions.ResourceNotFoundException;
 import io.github.liangxin233666.mfl.repositories.ArticleRepository;
 import io.github.liangxin233666.mfl.repositories.TagRepository;
@@ -37,7 +38,8 @@ public class ArticleService {
     private final TagRepository tagRepository;
     private final Slugify slugify;
     private final FileStorageService fileStorageService;
-
+    private final NotificationProducer notificationProducer;
+    private final HistoryService historyService;
 
     private static final Pattern TEMP_URL_PATTERN = Pattern.compile("https://?[^\\s\"]*/uploads/temp/[^\\s\")]+");
 
@@ -45,12 +47,14 @@ public class ArticleService {
     private static final Pattern URL_PATTERN = Pattern.compile(URL_REGEX);
 
 
-    public ArticleService(ArticleRepository articleRepository, UserRepository userRepository, TagRepository tagRepository, FileStorageService fileStorageService) {
+    public ArticleService(ArticleRepository articleRepository, UserRepository userRepository, TagRepository tagRepository, FileStorageService fileStorageService, NotificationProducer notificationProducer,HistoryService  historyService) {
         this.articleRepository = articleRepository;
         this.userRepository = userRepository;
         this.tagRepository = tagRepository;
         this.slugify = Slugify.builder().build();
         this.fileStorageService = fileStorageService;
+        this.notificationProducer=notificationProducer;
+        this.historyService = historyService;
     }
 
     @Transactional
@@ -252,7 +256,18 @@ public class ArticleService {
         if (!article.getFavoritedBy().contains(currentUser)) {
             article.getFavoritedBy().add(currentUser);
             article.setFavoritesCount(article.getFavoritesCount() + 1);
+            Article savedArticle = articleRepository.save(article);
+
+            // [发送消息]
+            notificationProducer.sendNotification(new NotificationEvent(
+                    currentUser.getId(),
+                    savedArticle.getAuthor().getId(),
+                    NotificationEvent.EventType.ARTICLE_LIKED,
+                    savedArticle.getId(),
+                    savedArticle.getSlug()
+            ));
         }
+
         return buildArticleResponseSimply(article,true);
     }
 
@@ -285,6 +300,10 @@ public class ArticleService {
         User currentUser = (currentUserDetails != null)
                 ? findUserById(Long.valueOf(currentUserDetails.getUsername()))
                 : null;
+
+        if(currentUser != null) {
+            historyService.recordHistoryAsync(currentUser, article);
+        }
 
         return buildArticleResponse(article, currentUser);
     }

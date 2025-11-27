@@ -65,18 +65,7 @@ onUnmounted(() => {
       <!-- 左侧边栏 (Sticky) -->
       <aside class="hidden lg:block col-span-3">
         <div class="sticky top-20 space-y-2 card bg-base-100 shadow-sm p-2 rounded-lg">
-          <a href="#" class="btn btn-ghost justify-start">我的关注</a>
-          <a href="#" class="btn btn-ghost justify-start font-bold text-pink-500">全部动态</a>
-          <!-- 静态占位符 -->
-          <div class="divider my-1"></div>
-          <div class="px-4 text-xs text-base-content/50">直播中</div>
-          <a v-for="i in 5" :key="i" class="btn btn-ghost justify-start h-auto py-2">
-            <div class="avatar"><div class="w-8 rounded-full"><img :src="`https://source.boringavatars.com/beam/120/streamer${i}`"/></div></div>
-            <div>
-              <div class="text-sm">虚拟主播{{i}}号</div>
-              <div class="text-xs font-normal text-base-content/50">正在直播游戏...</div>
-            </div>
-          </a>
+          <a href="#" class="btn btn-ghost justify-start font-bold text-pink-500">我的关注</a>
         </div>
       </aside>
 
@@ -97,7 +86,7 @@ onUnmounted(() => {
       <!-- 右侧边栏 (Sticky) -->
       <aside class="hidden lg:block col-span-3">
         <div class="sticky top-20 space-y-4 card bg-base-100 shadow-sm p-4 rounded-lg">
-          <h3 class="font-bold">bilibili热搜</h3>
+          <h3 class="font-bold">热搜</h3>
           <ul class="space-y-3">
             <li v-for="i in 10" :key="i" class="flex items-center gap-3 hover:bg-base-200 p-1 rounded-md cursor-pointer">
               <span class="font-bold" :class="i <=3 ? 'text-red-500' : 'text-base-content/50'">{{ i }}</span>

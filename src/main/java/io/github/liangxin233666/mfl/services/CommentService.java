@@ -7,6 +7,7 @@ import io.github.liangxin233666.mfl.dtos.ProfileResponse;
 import io.github.liangxin233666.mfl.entities.Article;
 import io.github.liangxin233666.mfl.entities.Comment;
 import io.github.liangxin233666.mfl.entities.User;
+import io.github.liangxin233666.mfl.events.NotificationEvent;
 import io.github.liangxin233666.mfl.exceptions.ResourceNotFoundException;
 import io.github.liangxin233666.mfl.repositories.ArticleRepository;
 import io.github.liangxin233666.mfl.repositories.CommentRepository;
@@ -27,11 +28,15 @@ public class CommentService {
     private final CommentRepository commentRepository;
     private final ArticleRepository articleRepository;
     private final UserRepository userRepository;
+    private final NotificationProducer notificationProducer;
 
-    public CommentService(CommentRepository commentRepository, ArticleRepository articleRepository, UserRepository userRepository) {
+
+
+    public CommentService(CommentRepository commentRepository, ArticleRepository articleRepository, UserRepository userRepository,NotificationProducer notificationProducer) {
         this.commentRepository = commentRepository;
         this.articleRepository = articleRepository;
         this.userRepository = userRepository;
+        this.notificationProducer = notificationProducer;
     }
 
     /**
@@ -50,6 +55,14 @@ public class CommentService {
         Comment savedComment = commentRepository.save(comment);
         savedComment.setRoot(savedComment); // 设置root为自己，成为新树的根
         savedComment = commentRepository.save(savedComment);
+
+        notificationProducer.sendNotification(new NotificationEvent(
+                author.getId(),
+                article.getAuthor().getId(), // 发给文章作者
+                NotificationEvent.EventType.COMMENT_CREATED,
+                savedComment.getId(),
+                article.getSlug()
+        ));
 
         // 返回新创建评论的DTO，不包含任何回复
         return new CommentResponse(buildSingleCommentDto(savedComment));
@@ -74,7 +87,13 @@ public class CommentService {
         reply.setRoot(parentComment.getRoot()); // 将回复的root设置为父评论的root
 
         Comment savedReply = commentRepository.save(reply);
-
+        notificationProducer.sendNotification(new NotificationEvent(
+                author.getId(),
+                parentComment.getAuthor().getId(), // 发给父评论的作者
+                NotificationEvent.EventType.COMMENT_REPLIED,
+                savedReply.getId(),
+                article.getSlug()
+        ));
         // 返回新创建回复的DTO
         return new CommentResponse(buildSingleCommentDto(savedReply));
     }

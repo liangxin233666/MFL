@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { EyeIcon, ChatBubbleOvalLeftEllipsisIcon } from '@heroicons/vue/24/solid';
+import { EyeIcon, ChatBubbleOvalLeftEllipsisIcon,StarIcon } from '@heroicons/vue/24/solid';
 import type { Profile } from '../types/api'; // **改动**: 引入 Profile 类型
 import UserInfo from './UserInfo.vue';       // **改动**: 导入 UserInfo 组件
 
@@ -33,7 +33,7 @@ const commentsDisplay = computed(() => formatCount(props.commentsCount));
       <div class="absolute bottom-2 left-3 right-3 flex justify-between items-center text-white text-xs font-bold">
         <div class="flex items-center gap-3">
           <div class="flex items-center gap-1">
-            <EyeIcon class="w-4 h-4" />
+            <StarIcon class="w-4 h-4" />
             <span>{{ viewsDisplay }}</span>
           </div>
           <div class="flex items-center gap-1">

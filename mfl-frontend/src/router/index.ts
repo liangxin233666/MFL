@@ -10,12 +10,38 @@ import EditorPage from '../views/EditorPage.vue';
 import FeedPage from "../views/FeedPage.vue";           // 必须导入
 import ContentManagePage from '../views/ContentManagePage.vue';
 import {useAuthStore} from "../stores/auth.ts";
+import NotificationsPage from '../views/NotificationsPage.vue';
+import HistoryPage from "../views/HistoryPage.vue";
 
 const routes: Array<RouteRecordRaw> = [
     { path: '/', name: 'Home', component: HomePage },
     { path: '/login', name: 'Login', component: LoginPage },
     { path: '/register', name: 'Register', component: RegisterPage },
     { path: '/settings', name: 'Settings', component: SettingsPage ,
+        beforeEnter: () => {
+            const auth = useAuthStore();
+            // 已登录，返回 true 放行
+            if (auth.isAuthenticated) return true;
+            // 未登录，返回重定向路径
+            return '/login';
+        }
+    },
+    {
+        path: '/history',
+        name: 'History',
+        component: HistoryPage,
+        beforeEnter: () => {
+            const auth = useAuthStore();
+            // 已登录，返回 true 放行
+            if (auth.isAuthenticated) return true;
+            // 未登录，返回重定向路径
+            return '/login';
+        }
+    },
+    {
+        path: '/notifications',
+        name: 'Notifications',
+        component: NotificationsPage,
         beforeEnter: () => {
             const auth = useAuthStore();
             // 已登录，返回 true 放行
@@ -72,6 +98,7 @@ const routes: Array<RouteRecordRaw> = [
             return '/login';
         }
     },
+
 ];
 
 const router = createRouter({

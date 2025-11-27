@@ -1,6 +1,6 @@
 <!-- src/App.vue -->
 <script setup lang="ts">
-import { onMounted } from 'vue';
+import {onMounted, onUnmounted} from 'vue';
 import { useAuthStore } from './stores/auth';
 import { DocumentPlusIcon, Squares2X2Icon, VideoCameraIcon } from '@heroicons/vue/24/outline';
 import {
@@ -14,11 +14,36 @@ import {
   Cog6ToothIcon,
   ArrowLeftStartOnRectangleIcon,
 } from '@heroicons/vue/24/outline';
+import {useNotificationStore} from "./stores/notification.ts";
 
 const authStore = useAuthStore();
+const notificationStore = useNotificationStore(); // 使用 store
+
+let pollingTimer: number | null = null;
+
+// 启动轮询
+const startPolling = () => {
+  // 先立即抓一次
+  if (authStore.isAuthenticated) {
+    notificationStore.fetchUnreadCount();
+  }
+
+  // 每 30 秒轮询一次 (根据需求调整时间)
+  pollingTimer = setInterval(() => {
+    if (authStore.isAuthenticated) {
+      notificationStore.fetchUnreadCount();
+    }
+  }, 30000);
+};
+
+
+onUnmounted(() => {
+  if (pollingTimer) clearInterval(pollingTimer);
+});
 
 onMounted(() => {
   authStore.checkAuth();
+  startPolling();
 });
 
 const handleLogout = () => {
@@ -47,15 +72,26 @@ const handleLogout = () => {
         <div class="navbar-end">
 
           <div v-if="authStore.isAuthenticated && authStore.user" class="flex items-center gap-x-2">
-            <a href="#" class="btn btn-ghost btn-circle hidden sm:inline-flex">
-              <div class="flex flex-col items-center">
-                <div class="indicator">
+
+
+            <router-link
+                to="/notifications"
+                class="btn btn-ghost btn-circle hidden sm:inline-flex"
+                active-class="text-pink-500"
+            >
+              <div class="flex flex-col items-center justify-center">
+                <div class="relative">
                   <BellIcon class="h-6 w-6" />
-                  <span class="badge badge-xs badge-primary indicator-item bg-pink-500 border-none text-white"></span>
+                  <!-- 使用 store 中的 unreadCount -->
+                  <span
+                      v-if="notificationStore.unreadCount > 0"
+                      class="absolute top-0 right-0 block h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-base-100 transform translate-x-1/4 -translate-y-1/4"
+                  ></span>
                 </div>
-                <span class="text-xs">通知</span>
+                <span class="text-xs mt-0.5">消息</span>
               </div>
-            </a>
+            </router-link>
+
 
             <router-link
                 to="/feed"
@@ -68,18 +104,23 @@ const handleLogout = () => {
             </div>
             </router-link>
 
-            <a href="#" class="btn btn-ghost btn-circle hidden sm:inline-flex">
+
+            <router-link :to="'/profile/' + authStore.user.username +'?tab=favorited'"
+                class="btn btn-ghost btn-circle hidden sm:inline-flex"
+            >
               <div class="flex flex-col items-center">
                 <StarIcon class="h-6 w-6" />
                 <span class="text-xs">收藏</span>
               </div>
-            </a>
-            <a href="#" class="btn btn-ghost btn-circle hidden sm:inline-flex">
+            </router-link>
+
+
+            <router-link to="/history" active-class="text-pink-500" class="btn btn-ghost btn-circle hidden sm:inline-flex">
               <div class="flex flex-col items-center">
                 <ClockIcon class="h-6 w-6" />
                 <span class="text-xs">历史</span>
               </div>
-            </a>
+            </router-link>
 
             <!-- 找到导航栏右侧区域，替换原来的投稿按钮代码 -->
 
@@ -136,7 +177,7 @@ const handleLogout = () => {
             <div class="dropdown dropdown-end dropdown-hover">
               <router-link :to="'/profile/' + authStore.user.username" tabindex="0" role="button" class="btn btn-ghost btn-circle avatar">
                 <div class="w-10 rounded-full">
-                  <img :src="authStore.userImage" alt="User avatar" />
+                  <img :src="authStore.userImage " alt="User avatar" />
                 </div>
               </router-link>
               <div tabindex="0" class="dropdown-content z-[1] p-4 shadow-xl bg-base-100 rounded-box w-72">
@@ -178,7 +219,7 @@ const handleLogout = () => {
     </header>
 
     <main class="flex-grow py-8">
-      <router-view></router-view>
+      <router-view :key="$route.fullPath" />
     </main>
 
   </div>

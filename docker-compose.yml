@@ -31,6 +31,7 @@ services:
       timeout: 5s
       retries: 5
 
+
   # 服务2: Redis 缓存
   redis:
     image: redis:7.2-alpine
@@ -77,6 +78,19 @@ services:
       retries: 5
       start_period: 5s
 
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"   # App 端口
+      - "15672:15672" # Web 端口
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+
 # 定义一个共享网络，以便服务之间可以通过名称互相访问
 networks:
   mfl-network:
@@ -90,3 +104,4 @@ volumes:
     driver: local
   minio_data:
     driver: local
+  rabbitmq_data:

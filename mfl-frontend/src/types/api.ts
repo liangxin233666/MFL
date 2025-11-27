@@ -38,3 +38,42 @@ export interface Comment {
     replies: Comment[];
 
 }
+
+export type NotificationType = 'FOLLOW' | 'FAVORITE' | 'COMMENT' | 'REPLY';
+
+export interface Notification {
+    id: number;
+    // 对应 ActorDto
+    actor: {
+        username: string;
+        image: string | null;
+    };
+    // 对应 NotificationEvent.EventType
+    type: 'ARTICLE_LIKED' | 'COMMENT_CREATED' | 'COMMENT_REPLIED' | 'COMMENT_LIKED';
+    // 对应 ResourceDto (注意：这里现在没有 title 和 body 了)
+    resource: {
+        id: number;
+        slug: string | null;
+    } | null;
+    isRead: boolean;
+    createdAt: string;
+}
+
+export interface MultipleNotificationsResponse {
+    notifications: Notification[];
+    notificationsCount: number;
+}
+
+export interface HistoryRecord {
+    viewedAt: string; // 时间戳
+    article: {
+        slug: string;
+        title: string;
+        coverImageUrl: string | null;
+        author: {
+            username: string;
+            image: string | null;
+        };
+    };
+}
+

@@ -6,6 +6,8 @@ import { PlusIcon, CheckIcon } from '@heroicons/vue/24/solid';
 import apiClient from '../api/apiClient';
 import type { Profile, Article } from '../types/api';
 import ArticlePreview from '../components/ArticlePreview.vue';
+import router from "../router";
+import { ASSETS } from '../config/assets';
 
 // 1. --- 初始化状态和路由 ---
 const route = useRoute();
@@ -13,7 +15,9 @@ const authStore = useAuthStore();
 
 const profile = ref<Profile | null>(null);
 const articles = ref<Article[]>([]);
-const activeTab = ref<'author' | 'favorited'>('author'); // 'author' for posts, 'favorited' for collections
+const activeTab = ref<'author' | 'favorited'>(
+    route.query.tab === 'favorited' ? 'favorited' : 'author'
+);
 
 const isLoadingProfile = ref(true);
 const isLoadingArticles = ref(false);
@@ -123,6 +127,9 @@ onMounted(async () => {
   await fetchProfile(profileUsername.value);
   isLoadingProfile.value = false;
   await fetchArticles(profileUsername.value, activeTab.value, 0);
+  if (route.query.tab) {
+     await router.replace({query: undefined});
+  }
 });
 
 // **关键**：侦听路由参数变化（例如从一个人的主页跳转到另一个人的主页）
@@ -139,19 +146,20 @@ watch(profileUsername, async (newUsername) => {
 });
 </script>
 
+
 <template>
   <div v-if="isLoadingProfile" class="text-center py-20"><span class="loading loading-spinner loading-lg"></span></div>
   <div v-else-if="profile">
     <!-- 用户信息横幅 -->
     <div class="card shadow-md overflow-hidden mb-8">
       <figure class="h-48">
-        <img :src="`https://picsum.photos/seed/${profile.username}/1200/300`" alt="User Banner" class="w-full h-full object-cover" />
+        <img :src="ASSETS.defaults.profileBannerD" alt="User Banner" class="w-full h-full object-cover" />
       </figure>
       <div class="card-body p-4 bg-base-100">
         <div class="flex items-start gap-4">
           <div class="avatar -mt-16">
             <div class="w-24 h-24 rounded-full ring ring-pink-500 ring-offset-base-100 ring-offset-2">
-              <img :src="profile.image || `https://source.boringavatars.com/beam/120/${profile.username}`" />
+              <img :src="profile.image || ASSETS.defaults.avatarD" />
             </div>
           </div>
           <div class="flex-grow">

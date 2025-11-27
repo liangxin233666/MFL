@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import apiClient from '../api/apiClient';
 import type { User } from '../types/api';
+import {ASSETS} from "../config/assets.ts";
 
 export const useAuthStore = defineStore('auth', () => {
 
@@ -16,7 +17,7 @@ export const useAuthStore = defineStore('auth', () => {
         }
         if (user.value) {
             // 为每个用户名生成一个固定的、好看的默认头像
-            return `https://api.dicebear.com/8.x/bottts-neutral/svg?seed=${encodeURIComponent(user.value.email)}`;
+            return ASSETS.defaults.avatarD;
         }
 
         return `https://api.dicebear.com/8.x/bottts-neutral/svg?seed=guest`;

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { Profile } from '../types/api';
+import {ASSETS} from "../config/assets.ts";
 
 const props = withDefaults(defineProps<{
   // 接收一个完整的 profile 对象
@@ -34,7 +35,7 @@ const sizeClasses = computed(() => {
 // 默认头像的逻辑，只存在于此
 const userImage = computed(() => {
   if (!props.profile) return `https://source.boringavatars.com/beam/120/guest`;
-  return props.profile.image || `https://source.boringavatars.com/beam/120/${props.profile.username}`;
+  return props.profile.image || ASSETS.defaults.avatarD;
 });
 </script>
 

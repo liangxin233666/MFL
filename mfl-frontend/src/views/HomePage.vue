@@ -6,6 +6,7 @@ import apiClient from '../api/apiClient';
 import type { Article } from '../types/api';
 import ArticlePreview from '../components/ArticlePreview.vue';
 import FeaturedCarousel from '../components/FeaturedCarousel.vue';
+import {ASSETS} from "../config/assets.ts";
 
 // 模拟标签数据，您可以替换为从 /api/tags 获取
 const tags = ref([
@@ -56,7 +57,7 @@ const fetchTags = async () => {
   <div class="-mt-9">
     <!-- Banner -->
     <div class="relative w-full h-40 md:h-45">
-      <img src="https://picsum.photos/seed/bilibili-pier/1600/300" class="w-full h-full object-cover object-center" alt="Banner">
+      <img :src="ASSETS.pages.homeBanner" class="w-full h-full object-cover object-center" alt="Banner">
       <div class="absolute inset-0 bg-gradient-to-t from-base-200 via-base-200/50 to-transparent"></div>
     </div>
 
