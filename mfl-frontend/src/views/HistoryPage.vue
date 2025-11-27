@@ -121,7 +121,7 @@ onMounted(() => {
             <figure class="w-40 md:w-56 h-full flex-shrink-0 relative overflow-hidden">
               <router-link :to="`/article/${item.article.slug}`" class="block w-full h-full">
                 <img
-                    :src="item.article.coverImageUrl || ASSETS.defaults.articleCover"
+                    :src="item.article.coverImageUrl || ASSETS.defaults.articleCoverD"
                     class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     :alt="item.article.title"
                 />
@@ -145,7 +145,7 @@ onMounted(() => {
                 <router-link :to="`/profile/${item.article.author.username}`" class="flex items-center gap-2 hover:text-pink-500 transition-colors">
                   <div class="avatar">
                     <div class="w-6 h-6 rounded-full">
-                      <img :src="item.article.author.image || ASSETS.defaults.avatar" />
+                      <img :src="item.article.author.image || ASSETS.defaults.avatarD" />
                     </div>
                   </div>
                   <span>{{ item.article.author.username }}</span>

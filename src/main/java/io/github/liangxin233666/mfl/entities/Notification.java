@@ -41,4 +41,7 @@ public class Notification {
 
     @CreationTimestamp
     private OffsetDateTime createdAt;
+
+    @Column(nullable = false)
+    private String content;
 }

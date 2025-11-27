@@ -1,6 +1,6 @@
 <!-- src/App.vue -->
 <script setup lang="ts">
-import {onMounted, onUnmounted} from 'vue';
+import {onMounted, onUnmounted, ref} from 'vue';
 import { useAuthStore } from './stores/auth';
 import { DocumentPlusIcon, Squares2X2Icon, VideoCameraIcon } from '@heroicons/vue/24/outline';
 import {
@@ -15,6 +15,7 @@ import {
   ArrowLeftStartOnRectangleIcon,
 } from '@heroicons/vue/24/outline';
 import {useNotificationStore} from "./stores/notification.ts";
+import router from "./router";
 
 const authStore = useAuthStore();
 const notificationStore = useNotificationStore(); // 使用 store
@@ -35,7 +36,20 @@ const startPolling = () => {
     }
   }, 30000);
 };
+const globalSearchQuery = ref('');
 
+// 导航栏搜索跳转
+const handleGlobalSearch = () => {
+  const q = globalSearchQuery.value.trim();
+  if (q) {
+    router.push({
+      name: 'Search',
+      query: { query: q } // 传参到 SearchPage
+    });
+    // 可选：搜索后清空输入框，也可以不清空，看个人喜好
+    // globalSearchQuery.value = '';
+  }
+};
 
 onUnmounted(() => {
   if (pollingTimer) clearInterval(pollingTimer);
@@ -62,11 +76,28 @@ const handleLogout = () => {
           </router-link>
         </div>
 
-        <div class="navbar-center hidden lg:flex">
-          <div class="relative w-96">
-            <input type="text" placeholder="搜点好东西..." class="input input-bordered h-9 w-full rounded-lg bg-base-200 focus:bg-base-100 focus:border-pink-500 transition-all" />
-            <MagnifyingGlassIcon class="absolute top-1/2 right-3 h-5 w-5 -translate-y-1/2 text-base-content/50" />
-          </div>
+        <div class="join w-full max-w-md relative">
+
+          <!-- 输入框 -->
+          <input
+              type="text"
+              v-model="globalSearchQuery"
+              @keyup.enter="handleGlobalSearch"
+              placeholder="搜索你感兴趣的内容..."
+              class="input input-bordered input-sm join-item w-full bg-base-100 focus:bg-white transition-colors pl-4 pr-10"
+              style="border-radius: 9999px 0 0 9999px;"
+          />
+
+          <!-- 搜索按钮 -->
+          <button
+              @click="handleGlobalSearch"
+              class="btn btn-sm join-item bg-base-200 border-base-200 hover:bg-base-300"
+              style="border-radius: 0 9999px 9999px 0;"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </button>
         </div>
 
         <div class="navbar-end">

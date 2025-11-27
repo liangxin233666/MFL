@@ -8,13 +8,16 @@ public record NotificationEvent(
         Long targetUserId,  // 接收通知的人是谁? (User ID)
         EventType type,     // 什么动作? (点赞? 评论?)
         Long resourceId,    // 相关的资源ID (文章ID 或 评论ID)
-        String resourceSlug // 相关的文章Slug (用于生成链接)
+        String resourceSlug, // 相关的文章Slug (用于生成链接)
+        String payload       // [新] 附加信息，比如拒绝理由
 ) implements Serializable {
 
     public enum EventType {
         ARTICLE_LIKED,    // 文章被点赞
         COMMENT_CREATED,  // 文章收到评论
         COMMENT_REPLIED,  // 评论收到回复
-        COMMENT_LIKED     // 评论被点赞 (这是你未来可能的扩展)
+        COMMENT_LIKED,    // 评论被点赞
+        ARTICLE_APPROVED, // 审核通过
+        ARTICLE_REJECTED  // 审核被拒
     }
 }

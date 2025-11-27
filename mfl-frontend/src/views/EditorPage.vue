@@ -94,7 +94,7 @@ const handleSubmit = async () => {
       title: form.title,
       description: form.description,
       body: form.body,
-      tagList: form.tagList.split(',').map(tag => tag.trim()).filter(Boolean),
+      tagList: form.tagList.split(';').map(tag => tag.trim()).filter(Boolean),
       coverImageUrl: form.coverImageUrl,
     }
   };
@@ -156,7 +156,7 @@ const handleSubmit = async () => {
           <input type="text" v-model="form.description" placeholder="简短描述..." class="input input-sm input-bordered w-full focus:border-pink-500" required/>
           <div class="flex items-center gap-2">
             <TagIcon class="w-4 h-4 text-base-content/50" />
-            <input type="text" v-model="form.tagList" class="input input-sm input-ghost grow focus:bg-transparent px-1" placeholder="标签 (用逗号分隔)" />
+            <input type="text" v-model="form.tagList" class="input input-sm input-ghost grow focus:bg-transparent px-1" placeholder="标签 (用;分隔)" />
           </div>
         </div>
 

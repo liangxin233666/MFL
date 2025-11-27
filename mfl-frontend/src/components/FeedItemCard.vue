@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { Article } from '../types/api';
 import { HandThumbUpIcon, ChatBubbleOvalLeftIcon, ArrowUturnRightIcon } from '@heroicons/vue/24/outline';
-import UserInfo from './UserInfo.vue'; // 1. 导入新组件
+import UserInfo from './UserInfo.vue';
+import {ASSETS} from "../config/assets.ts"; // 1. 导入新组件
 
 defineProps<{ article: Article }>();
 </script>
@@ -17,7 +18,7 @@ defineProps<{ article: Article }>();
         <h3 class="font-bold text-lg hover:text-pink-500 transition-colors">{{ article.title }}</h3>
         <p class="mt-1 text-base-content/80 two-line-clamp">{{ article.description }}</p>
         <figure class="mt-2 rounded-lg overflow-hidden">
-          <img :src="`https://picsum.photos/seed/${article.slug}/600/300`" class="w-full object-cover aspect-[16/9]" />
+          <img :src="article.coverImageUrl||ASSETS.defaults.articleCoverD" class="w-full object-cover aspect-[16/9]" />
         </figure>
       </router-link>
     </div>

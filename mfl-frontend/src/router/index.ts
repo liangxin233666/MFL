@@ -12,6 +12,7 @@ import ContentManagePage from '../views/ContentManagePage.vue';
 import {useAuthStore} from "../stores/auth.ts";
 import NotificationsPage from '../views/NotificationsPage.vue';
 import HistoryPage from "../views/HistoryPage.vue";
+import SearchPage from "../views/SearchPage.vue";
 
 const routes: Array<RouteRecordRaw> = [
     { path: '/', name: 'Home', component: HomePage },
@@ -37,6 +38,11 @@ const routes: Array<RouteRecordRaw> = [
             // 未登录，返回重定向路径
             return '/login';
         }
+    },
+    {
+        path: '/search',
+        name: 'Search',
+        component: SearchPage,
     },
     {
         path: '/notifications',

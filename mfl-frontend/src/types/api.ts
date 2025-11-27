@@ -27,6 +27,7 @@ export interface Article {
     favoritesCount: number | null;
     author: Profile;
     coverImageUrl: string | null;
+    auditStatus: 'PENDING' | 'APPROVED' | 'REJECTED';
 }
 
 export interface Comment {
@@ -39,24 +40,35 @@ export interface Comment {
 
 }
 
-export type NotificationType = 'FOLLOW' | 'FAVORITE' | 'COMMENT' | 'REPLY';
+export type EventType =
+    | 'ARTICLE_LIKED'
+    | 'COMMENT_CREATED'
+    | 'COMMENT_REPLIED'
+    | 'COMMENT_LIKED'
+    | 'ARTICLE_APPROVED' // 如果后端有这个，记得加上
+    | 'ARTICLE_REJECTED'; // 如果后端有这个，记得加上
 
 export interface Notification {
     id: number;
-    // 对应 ActorDto
+    // 发起人
     actor: {
         username: string;
         image: string | null;
     };
-    // 对应 NotificationEvent.EventType
-    type: 'ARTICLE_LIKED' | 'COMMENT_CREATED' | 'COMMENT_REPLIED' | 'COMMENT_LIKED';
-    // 对应 ResourceDto (注意：这里现在没有 title 和 body 了)
+    // 事件类型
+    type: EventType;
+    // 资源定位
     resource: {
         id: number;
         slug: string | null;
     } | null;
+    // 状态
     isRead: boolean;
     createdAt: string;
+
+    // **注意**：如果不加这个，审核拒绝理由就没法显示了
+    // 建议后端 DTO 依然保留 payload
+    payload?: string;
 }
 
 export interface MultipleNotificationsResponse {

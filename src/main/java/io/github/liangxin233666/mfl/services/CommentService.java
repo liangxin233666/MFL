@@ -61,7 +61,8 @@ public class CommentService {
                 article.getAuthor().getId(), // 发给文章作者
                 NotificationEvent.EventType.COMMENT_CREATED,
                 savedComment.getId(),
-                article.getSlug()
+                article.getSlug(),
+                savedComment.getBody()
         ));
 
         // 返回新创建评论的DTO，不包含任何回复
@@ -92,7 +93,9 @@ public class CommentService {
                 parentComment.getAuthor().getId(), // 发给父评论的作者
                 NotificationEvent.EventType.COMMENT_REPLIED,
                 savedReply.getId(),
-                article.getSlug()
+                article.getSlug(),
+                savedReply.getBody()
+
         ));
         // 返回新创建回复的DTO
         return new CommentResponse(buildSingleCommentDto(savedReply));

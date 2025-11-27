@@ -1,17 +1,21 @@
 package io.github.liangxin233666.mfl.services;
 
 import com.github.slugify.Slugify;
+import io.github.liangxin233666.mfl.config.RabbitMqAuditConfig;
 import io.github.liangxin233666.mfl.dtos.*;
 import io.github.liangxin233666.mfl.entities.Article;
 import io.github.liangxin233666.mfl.entities.Tag;
 import io.github.liangxin233666.mfl.entities.User;
+import io.github.liangxin233666.mfl.entities.es.ArticleDocument;
 import io.github.liangxin233666.mfl.events.NotificationEvent;
 import io.github.liangxin233666.mfl.exceptions.ResourceNotFoundException;
 import io.github.liangxin233666.mfl.repositories.ArticleRepository;
 import io.github.liangxin233666.mfl.repositories.TagRepository;
 import io.github.liangxin233666.mfl.repositories.UserRepository;
+import io.github.liangxin233666.mfl.repositories.es.EsArticleRepository;
 import jakarta.persistence.criteria.Join;
 import jakarta.validation.Valid;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -40,6 +44,8 @@ public class ArticleService {
     private final FileStorageService fileStorageService;
     private final NotificationProducer notificationProducer;
     private final HistoryService historyService;
+    private final RabbitTemplate rabbitTemplate;
+    private final EsArticleRepository esArticleRepository;
 
     private static final Pattern TEMP_URL_PATTERN = Pattern.compile("https://?[^\\s\"]*/uploads/temp/[^\\s\")]+");
 
@@ -47,7 +53,7 @@ public class ArticleService {
     private static final Pattern URL_PATTERN = Pattern.compile(URL_REGEX);
 
 
-    public ArticleService(ArticleRepository articleRepository, UserRepository userRepository, TagRepository tagRepository, FileStorageService fileStorageService, NotificationProducer notificationProducer,HistoryService  historyService) {
+    public ArticleService(ArticleRepository articleRepository, UserRepository userRepository, TagRepository tagRepository, FileStorageService fileStorageService, NotificationProducer notificationProducer,HistoryService  historyService,RabbitTemplate rabbitTemplate, EsArticleRepository esArticleRepository) {
         this.articleRepository = articleRepository;
         this.userRepository = userRepository;
         this.tagRepository = tagRepository;
@@ -55,6 +61,8 @@ public class ArticleService {
         this.fileStorageService = fileStorageService;
         this.notificationProducer=notificationProducer;
         this.historyService = historyService;
+        this.rabbitTemplate = rabbitTemplate;
+        this.esArticleRepository = esArticleRepository;
     }
 
     @Transactional
@@ -91,7 +99,7 @@ public class ArticleService {
 
         Article savedArticle = articleRepository.save(article);
 
-
+        rabbitTemplate.convertAndSend(RabbitMqAuditConfig.AUDIT_QUEUE, savedArticle.getId());
         return buildArticleResponseSimply(savedArticle);
     }
 
@@ -264,7 +272,8 @@ public class ArticleService {
                     savedArticle.getAuthor().getId(),
                     NotificationEvent.EventType.ARTICLE_LIKED,
                     savedArticle.getId(),
-                    savedArticle.getSlug()
+                    savedArticle.getSlug(),
+                    null
             ));
         }
 
@@ -290,7 +299,42 @@ public class ArticleService {
                 .orElseThrow(() -> new ResourceNotFoundException("Article not found with slug: " + slug));
     }
 
+    @Transactional(readOnly = true)
+    public MultipleArticlesResponse searchArticles(String query, Pageable pageable, UserDetails currentUserDetails) {
+        // 1. 获取当前用户 (用于判断 isFavorited/isFollowing)
+        User currentUser = (currentUserDetails != null)
+                ? findUserById(Long.valueOf(currentUserDetails.getUsername()))
+                : null;
 
+        // 2. [ES 查询] 在 ES 索引中查找 ID 列表
+        // ES 会对 Title, Description, AiKeywords 三个字段同时检索
+        Page<ArticleDocument> esPage = esArticleRepository.searchIdeally(query, pageable);
+
+        if (esPage.isEmpty()) {
+            return new MultipleArticlesResponse(List.of(), 0);
+        }
+
+        // 3. [ID 提取]
+        List<Long> articleIds = esPage.getContent().stream()
+                .map(ArticleDocument::getId)
+                .collect(Collectors.toList());
+
+        // 4. [DB 回捞] 批量查数据库获取完整实体
+        List<Article> dbArticles = articleRepository.findAllById(articleIds);
+
+        // 5. [内存重组] 关键步骤：ES 返回的顺序是按相关度排序的（Rank），而 DB 的 findAllById 不保证顺序。
+        //    所以我们需要手动按 articleIds 的顺序，重新把 dbArticles 排好。
+
+        //    技巧：先转成 Map<ID, Article> 方便查找
+        Map<Long, Article> articleMap = dbArticles.stream()
+                .collect(Collectors.toMap(Article::getId, Function.identity()));
+        List<ArticleResponse.ArticleDto> sortedDtos = articleIds.stream()
+                .map(articleMap::get) // 按 ES 给的 ID 顺序取对象
+                .filter(Objects::nonNull) // 防御性编程：理论上不会空，除非数据不同步
+                .map(article -> buildArticleResponseSimply(article).article()) // 转换为 DTO
+                .collect(Collectors.toList());
+        return new MultipleArticlesResponse(sortedDtos, esPage.getTotalElements());
+    }
 
     //@Cacheable(value = "articles", key = "#slug")
     @Transactional(readOnly = true)
@@ -300,7 +344,14 @@ public class ArticleService {
         User currentUser = (currentUserDetails != null)
                 ? findUserById(Long.valueOf(currentUserDetails.getUsername()))
                 : null;
+        boolean isAuthor = article.getAuthor().equals(currentUser);
+        boolean isPublished = (article.getStatus() == Article.ArticleStatus.PUBLISHED);
 
+        if (!isPublished && !isAuthor) {
+            // 如果既不是已发布，看的人也不是作者本人 -> 404 或者 403
+            // 行业惯例通常报 404，装作这篇文章不存在，防止别人套取信息
+            throw new ResourceNotFoundException("Article not found");
+        }
         if(currentUser != null) {
             historyService.recordHistoryAsync(currentUser, article);
         }
@@ -378,7 +429,7 @@ public class ArticleService {
 
         // 1. 构建动态查询条件 (Specification)
         Specification<Article> spec = (root, query, criteriaBuilder) -> criteriaBuilder.conjunction();
-
+        spec = spec.and(statusIsPublished());
         if (tag != null && !tag.isBlank()) {
             spec = spec.and(hasTag(tag));
         }
@@ -411,7 +462,11 @@ public class ArticleService {
             return new MultipleArticlesResponse(List.of(), 0);
         }
 
-        Page<Article> articlePage = articleRepository.findByAuthorInOrderByCreatedAtDesc(followedUsers, pageable);
+        Page<Article> articlePage = articleRepository.findByAuthorInAndStatusOrderByCreatedAtDesc(
+                followedUsers,
+                Article.ArticleStatus.PUBLISHED, // <--- 关键参数
+                pageable
+        );
 
         List<ArticleResponse.ArticleDto> articleDtos = articlePage.getContent().stream()
                 .map(article -> buildArticleResponseSimply(article).article())
@@ -442,6 +497,11 @@ public class ArticleService {
 
             return criteriaBuilder.equal(favoritedByJoin.get("username"), username);
         };
+    }
+
+    private Specification<Article> statusIsPublished() {
+        return (root, query, criteriaBuilder) ->
+                criteriaBuilder.equal(root.get("status"), Article.ArticleStatus.PUBLISHED);
     }
 
     private Specification<Article> favoriting(UserDetails currentUserDetails) {

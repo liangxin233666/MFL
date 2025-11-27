@@ -9,7 +9,8 @@ import { useAuthStore } from '../stores/auth';
 // 导入所有需要的组件和图标
 import UserInfo from '../components/UserInfo.vue';
 import CommentItem from '../components/CommentItem.vue';
-import { ShareIcon, StarIcon, ChatBubbleBottomCenterTextIcon, PlusIcon, CheckIcon } from '@heroicons/vue/24/solid';
+import { ShareIcon, StarIcon, ChatBubbleBottomCenterTextIcon, PlusIcon, CheckIcon,TagIcon } from '@heroicons/vue/24/solid';
+import router from "../router";
 
 // --- 核心状态 ---
 const route = useRoute();
@@ -80,6 +81,12 @@ onMounted(async () => {
   }
 });
 
+const searchByTag = (tag: string) => {
+  router.push({
+    name: 'Search',
+    query: { query: tag }
+  });
+};
 
 const toggleFavorite = async () => {
   if (!authStore.isAuthenticated || !article.value) return alert('请先登录');
@@ -119,18 +126,41 @@ const renderedBody = computed(() => article.value?.body ? marked.parse(article.v
     <!-- 左侧主内容区 -->
     <div class="lg:col-span-2">
       <div class="card bg-base-100 shadow-md">
-        <div class="card-body">
+        <div class="card-body pt-6">
           <h1 class="text-3xl font-bold mb-2">{{ article.title }}</h1>
-          <div class="flex items-center gap-4 text-sm text-base-content/70 mb-4">
+          <div class="flex items-center gap-4 text-sm text-base-content/70 mb-2">
             <UserInfo :profile="article.author" size="xs" />
             <span class="text-xs text-base-content/50">发布于 {{ new Date(article.createdAt).toLocaleDateString() }}</span>
           </div>
           <div class="divider"></div>
 
+
+          <div v-if="article.tagList && article.tagList.length > 0" class="flex flex-wrap items-center gap-2 mb-4">
+            <button
+                v-for="tag in article.tagList"
+                :key="tag"
+                @click="searchByTag(tag)"
+                class="badge badge-ghost h-auto py-2 px-3 text-xs md:text-sm cursor-pointer hover:bg-pink-500 hover:text-white transition-all duration-200 border-base-200 bg-base-100"
+            >
+              <TagIcon class="w-3.5 h-3.5 mr-1.5 opacity-60" />
+              {{ tag }}
+            </button>
+          </div>
+
+          <!-- [微调] 2. 简介：适中的边距(p-4) + 标准字号(text-base) + 精致左边框 -->
+          <div v-if="article.description" class="bg-base-200/40 p-4 rounded-r-lg border-l-4 border-pink-400/80 mb-2">
+            <p class="text-base text-base-content/70 leading-relaxed font-normal">
+              <!-- 引号颜色稍微加深一点点，对应稍大的文字 -->
+              <span class="font-serif text-pink-400/60 mr-1 text-lg">“</span>
+              {{ article.description }}
+              <span class="font-serif text-pink-400/60 ml-1 text-lg">”</span>
+            </p>
+          </div>
+
           <!-- 修改点：添加了 class="article-content" 以便 CSS 控制内部图片 -->
           <article class="prose max-w-none lg:prose-lg article-content" v-html="renderedBody"></article>
 
-          <div class="card-actions justify-end mt-8">
+          <div class="card-actions justify-end mt-9">
             <button @click="toggleFavorite" :disabled="isFavoriting" class="btn gap-2" :class="{ 'btn-ghost': !article.favorited, 'bg-pink-100 text-pink-500': article.favorited }">
               <span v-if="isFavoriting" class="loading loading-spinner loading-xs"></span>
               <StarIcon class="w-5 h-5"/> {{ article.favorited ? '已点赞' : '点赞' }} ({{ article.favoritesCount || 0 }})
@@ -145,7 +175,7 @@ const renderedBody = computed(() => article.value?.body ? marked.parse(article.v
         <div class="card-body">
           <h3 class="text-xl font-bold mb-4 flex items-center gap-2"><ChatBubbleBottomCenterTextIcon class="w-6 h-6 text-pink-500"/> <span>评论区</span></h3>
           <div v-if="authStore.isAuthenticated" class="flex items-start gap-4">
-            <div class="avatar"><div class="w-12 h-12 rounded-full"><img :src="authStore.userImage"/></div></div>
+            <div class="avatar"><div class="w-12 h-12 rounded-full"><img :src="authStore.userImage" alt=""/></div></div>
             <textarea v-model="newTopLevelComment" class="textarea textarea-bordered flex-grow" placeholder="留下你的精彩评论吧！" rows="2"></textarea>
             <button @click="postTopLevelComment" class="btn bg-pink-500 text-white" :disabled="isSubmittingTopComment || !newTopLevelComment.trim()">
               <span v-if="isSubmittingTopComment" class="loading loading-spinner loading-xs"></span>发布

@@ -73,4 +73,11 @@ public class Article {
 
     @Column(length = 2048)
     private String coverImageUrl;
+
+    @Enumerated(EnumType.STRING)
+    private ArticleStatus status = ArticleStatus.PENDING;
+
+    public enum ArticleStatus {
+        PENDING, PUBLISHED, REJECTED
+    }
 }

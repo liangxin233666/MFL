@@ -89,7 +89,8 @@ public class NotificationService {
                 n.getEventType(),
                 new NotificationResponse.ResourceDto(n.getResourceId(), n.getResourceSlug()),
                 n.isRead(),
-                n.getCreatedAt()
+                n.getCreatedAt(),
+                n.getContent()
         );
     }
 }

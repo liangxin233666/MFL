@@ -123,13 +123,12 @@ const toggleFollow = async () => {
 
 // 5. --- 生命周期钩子和侦听器 ---
 onMounted(async () => {
+
   isLoadingProfile.value = true;
   await fetchProfile(profileUsername.value);
+
   isLoadingProfile.value = false;
   await fetchArticles(profileUsername.value, activeTab.value, 0);
-  if (route.query.tab) {
-     await router.replace({query: undefined});
-  }
 });
 
 // **关键**：侦听路由参数变化（例如从一个人的主页跳转到另一个人的主页）
@@ -139,7 +138,6 @@ watch(profileUsername, async (newUsername) => {
   articles.value = [];
   currentPage.value = 0;
   hasMore.value = true;
-
   await fetchProfile(newUsername);
   isLoadingProfile.value = false;
   await fetchArticles(newUsername, 'author', 0);

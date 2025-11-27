@@ -38,12 +38,15 @@ const handleNotificationClick = async (notification: Notification) => {
 
   // 2. 跳转逻辑 (适配新的 resource 结构)
   if (notification.resource && notification.resource.slug) {
-    // 无论是文章被赞、评论、回复，都跳到对应的文章详情页
-    // (如果后端能返回 slug，说明肯定是跟文章关联的)
+
     await router.push(`/article/${notification.resource.slug}`);
-  } else {
-    // 兜底：如果 resource 是 null 或者没 slug，就去发送者的个人主页
-    await router.push(`/profile/${notification.actor.username}`);
+
+  } else if (notification.type === 'ARTICLE_REJECTED' && notification.resource?.slug) {
+
+    await router.push(`/editor/${notification.resource.slug}`);
+
+  } else if (['COMMENT_REPLIED', 'COMMENT_LIKED'].includes(notification.type) && notification.resource?.slug) {
+    await router.push(`/article/${notification.resource.slug}`);
   }
 };
 

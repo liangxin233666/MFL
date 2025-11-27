@@ -10,7 +10,8 @@ public record NotificationResponse(
         NotificationEvent.EventType type,
         ResourceDto resource,       // 相关资源的简要信息
         boolean isRead,
-        OffsetDateTime createdAt
+        OffsetDateTime createdAt,
+        String payload
 ) {
     public record ActorDto(String username, String image) {}
     public record ResourceDto(Long id, String slug) {}

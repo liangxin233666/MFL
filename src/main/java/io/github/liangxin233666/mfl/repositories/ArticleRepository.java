@@ -20,4 +20,11 @@ public interface ArticleRepository extends JpaRepository<Article, Long> , JpaSpe
 
     @EntityGraph(attributePaths = {"author", "tags"})
     Page<Article> findByAuthorInOrderByCreatedAtDesc(List<User> authors, Pageable pageable);
+
+    @EntityGraph(attributePaths = {"author", "tags"})
+    Page<Article> findByAuthorInAndStatusOrderByCreatedAtDesc(
+            List<User> authors,
+            Article.ArticleStatus status,
+            Pageable pageable
+    );
 }

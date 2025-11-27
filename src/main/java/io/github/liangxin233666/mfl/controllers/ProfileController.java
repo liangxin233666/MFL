@@ -21,7 +21,6 @@ public class ProfileController {
     public ResponseEntity<ProfileResponse> getProfile(
             @PathVariable String username,
             @AuthenticationPrincipal UserDetails currentUser) {
-        System.out.println("aaaaaa");
         ProfileResponse profileResponse = profileService.getProfile(username, currentUser);
         return ResponseEntity.ok(profileResponse);
     }

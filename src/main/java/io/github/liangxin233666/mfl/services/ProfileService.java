@@ -20,7 +20,7 @@ public class ProfileService {
         this.userRepository = userRepository;
     }
 
-    @Cacheable(value = "profiles", key = "#currentUserDetails.username")
+    @Cacheable(value = "profiles", key = "#username")
     @Transactional(readOnly = true)
     public ProfileResponse getProfile(String username, UserDetails currentUserDetails) {
         User userToFind = findUserByUsername(username);
