@@ -54,4 +54,7 @@ public class User {
     //用 Hibernate.size()
     private Set<User> followers = new HashSet<>();
 
+    @Column(columnDefinition = "TEXT")
+    private String embeddingVector;
+
 }

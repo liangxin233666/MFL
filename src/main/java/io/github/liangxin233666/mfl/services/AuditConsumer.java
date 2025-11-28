@@ -13,6 +13,10 @@ import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
+
 @Slf4j
 @Service
 public class AuditConsumer {
@@ -53,19 +57,52 @@ public class AuditConsumer {
                 article.setStatus(Article.ArticleStatus.PUBLISHED);
                 articleRepository.save(article);
 
-                // 4. 构建 ES 文档
+                StringBuilder embeddingSource = new StringBuilder();
+
+                // A. 标题
+                embeddingSource.append(article.getTitle()).append("\n");
+
+                // B. 简介
+                if (article.getDescription() != null) {
+                    embeddingSource.append(article.getDescription()).append("\n");
+                }
+
+                // C. 用户填写的原生 Tags (List<Tag> 转 String)
+                List<String> userTagList = article.getTags().stream()
+                        .map(Tag::getName)
+                        .toList(); // 保存下来下面还要用
+
+                if (!userTagList.isEmpty()) {
+                    embeddingSource.append("Tags: ").append(String.join(", ", userTagList)).append("\n");
+                }
+
+                // D. AI 分析出的关键词 (List<String>)
+                if (result.keywords() != null && !result.keywords().isEmpty()) {
+                    embeddingSource.append("Keywords: ").append(String.join(", ", result.keywords()));
+                }
+
+                // 调用 Gemini 生成能够精准表征文章语义的向量
+                float[] vector = geminiService.generateEmbedding(embeddingSource.toString());
+
+                // ==========================================
+                // 3. 构建并保存 ES 文档
+                // ==========================================
                 ArticleDocument doc = ArticleDocument.builder()
                         .id(article.getId())
                         .slug(article.getSlug())
                         .title(article.getTitle())
                         .description(article.getDescription())
-                        .aiKeywords(result.keywords()) // AI 生成的
 
-                        // --- 新增 ---
-                        .originalTags(article.getTags().stream().map(Tag::getName).toList()) // 用户填的
-                        .authorName(article.getAuthor().getUsername()) // 作者名
+                        // --- AI 能力体现 ---
+                        .aiKeywords(result.keywords())   // 存：用于字面权重的倒排搜索
+                        .embeddingVector(vector)         // 存：用于向量距离的语义推荐/搜索
+
+                        // --- 基础信息补充 ---
+                        .originalTags(userTagList)       // 存：用户的原始分类
+                        .authorName(article.getAuthor().getUsername())
                         .createdAt(article.getCreatedAt())
                         .build();
+
                 esArticleRepository.save(doc);
                 log.info("文章发布并索引成功: {}", article.getSlug());
                 sendAuditNotification(article, NotificationEvent.EventType.ARTICLE_APPROVED, null);

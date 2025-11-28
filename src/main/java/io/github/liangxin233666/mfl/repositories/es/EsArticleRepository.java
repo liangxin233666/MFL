@@ -30,4 +30,6 @@ public interface EsArticleRepository extends ElasticsearchRepository<ArticleDocu
         }
     """)
     Page<ArticleDocument> searchIdeally(String keyword, Pageable pageable);
+
+    ArticleDocument findBySlug(String slug);
 }

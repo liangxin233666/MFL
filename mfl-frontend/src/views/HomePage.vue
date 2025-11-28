@@ -20,7 +20,7 @@ const isLoading = ref(true);
 const fetchArticles = async (offset = 0) => {
   try {
     isLoading.value = true;
-    const response = await apiClient.get<{ articles: Article[] }>('/articles?limit=20&offset=' + offset);
+    const response = await apiClient.get<{ articles: Article[] }>('/articles/recommend');
     articles.value = response.data.articles;
   } catch (error) {
     console.error('获取文章列表失败:', error);
@@ -32,7 +32,7 @@ const fetchArticles = async (offset = 0) => {
 
 const refreshArticles = () => {
   const randomOffset = Math.floor(Math.random() * 20); // 随机偏移量
-  fetchArticles(randomOffset);
+  fetchArticles(0);
 };
 
 onMounted(() => {

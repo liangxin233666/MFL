@@ -17,8 +17,10 @@ import jakarta.persistence.criteria.Join;
 import jakarta.validation.Valid;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
@@ -46,6 +48,9 @@ public class ArticleService {
     private final HistoryService historyService;
     private final RabbitTemplate rabbitTemplate;
     private final EsArticleRepository esArticleRepository;
+    private final UserService userService;
+    private final RecommendationService recommendationService;
+
 
     private static final Pattern TEMP_URL_PATTERN = Pattern.compile("https://?[^\\s\"]*/uploads/temp/[^\\s\")]+");
 
@@ -53,7 +58,7 @@ public class ArticleService {
     private static final Pattern URL_PATTERN = Pattern.compile(URL_REGEX);
 
 
-    public ArticleService(ArticleRepository articleRepository, UserRepository userRepository, TagRepository tagRepository, FileStorageService fileStorageService, NotificationProducer notificationProducer,HistoryService  historyService,RabbitTemplate rabbitTemplate, EsArticleRepository esArticleRepository) {
+    public ArticleService(ArticleRepository articleRepository, UserRepository userRepository, TagRepository tagRepository, FileStorageService fileStorageService, NotificationProducer notificationProducer,HistoryService  historyService,RabbitTemplate rabbitTemplate, EsArticleRepository esArticleRepository, UserService userService, RecommendationService recommendationService) {
         this.articleRepository = articleRepository;
         this.userRepository = userRepository;
         this.tagRepository = tagRepository;
@@ -63,6 +68,8 @@ public class ArticleService {
         this.historyService = historyService;
         this.rabbitTemplate = rabbitTemplate;
         this.esArticleRepository = esArticleRepository;
+        this.userService = userService;
+        this.recommendationService = recommendationService;
     }
 
     @Transactional
@@ -337,7 +344,7 @@ public class ArticleService {
     }
 
     //@Cacheable(value = "articles", key = "#slug")
-    @Transactional(readOnly = true)
+    @Transactional
     public ArticleResponse getArticleBySlug(String slug, UserDetails currentUserDetails) {
         Article article = findArticleBySlug(slug);
 
@@ -354,6 +361,7 @@ public class ArticleService {
         }
         if(currentUser != null) {
             historyService.recordHistoryAsync(currentUser, article);
+            updateUserInterestAsync(currentUser,article.getId());
         }
 
         return buildArticleResponse(article, currentUser);
@@ -557,6 +565,94 @@ public class ArticleService {
         return extractUrls(body, coverUrl).stream()
                 .filter(url -> url.contains("/uploads/temp/"))
                 .collect(Collectors.toList());
+    }
+
+
+    @Async // 异步更新画像，不阻塞
+    public void updateUserInterestAsync(User user, Long articleId) {
+        // 从 ES 捞出文章的向量 (因为 DB 里没存向量，ES 查得快)
+        ArticleDocument doc = esArticleRepository.findById(articleId).orElse(null);
+
+        if (user != null && doc != null && doc.getEmbeddingVector() != null) {
+            String newVecStr = userService.updateUserEmbedding(user.getEmbeddingVector(), doc.getEmbeddingVector());
+            user.setEmbeddingVector(newVecStr);
+            userRepository.save(user);
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public MultipleArticlesResponse getRecommendedFeed(UserDetails currentUserDetails) {
+        // 1. 捞用户画像 (从 DB/Redis)
+        User user = findUserById(Long.valueOf(currentUserDetails.getUsername()));
+        if (user == null) return getArticles(null,null,null, PageRequest.of(0, 16));
+
+        // 2. 解析 Vector 字符串 -> float[]
+        float[] userVector = parseEmbeddingString(user.getEmbeddingVector());
+
+        // 3. 冷启动处理 (如果是新用户，没向量) -> 返回最新发布文章
+        if (userVector == null) {
+
+            return getArticles(null,null,null,PageRequest.of(0, 16));
+        }
+
+        // 4. 调用 ES 推荐算法 (拿回 ID 列表)
+        List<Long> ids = recommendationService.recommendForUser(userVector, 16);
+
+        // 5. 根据 ID 回捞数据并组装
+        List<ArticleResponse.ArticleDto> dtos = fetchArticlesByIdsAndPreserveOrder(ids, user);
+
+        return new MultipleArticlesResponse(dtos, dtos.size());
+    }
+
+    // ---------------------------------------------
+    // 函数 2: 获取相关文章 (看了又看)
+    // ---------------------------------------------
+    @Transactional(readOnly = true)
+    public MultipleArticlesResponse getRelatedArticles(String currentArticleSlug, UserDetails currentUserDetails) {
+        User user = findUserById(Long.valueOf(currentUserDetails.getUsername()));
+
+        // 1. 先去 ES 找当前这篇文章的 Document (目的是拿到它的向量)
+        ArticleDocument sourceDoc = esArticleRepository.findBySlug(currentArticleSlug);
+
+        if (sourceDoc == null || sourceDoc.getEmbeddingVector() == null) {
+            return new MultipleArticlesResponse(Collections.emptyList(), 0);
+        }
+
+        // 2. 调用 ES 混合检索 (拿回 ID 列表)
+        List<Long> ids = recommendationService.getRelatedArticles(sourceDoc, 6);
+
+        // 3. 组装数据
+        List<ArticleResponse.ArticleDto> dtos = fetchArticlesByIdsAndPreserveOrder(ids, user);
+
+        return new MultipleArticlesResponse(dtos, dtos.size());
+    }
+
+    // --- 内部通用私有方法：按ID取文章并保持 ES 给的顺序 ---
+    private List<ArticleResponse.ArticleDto> fetchArticlesByIdsAndPreserveOrder(List<Long> ids, User currentUser) {
+        if (ids.isEmpty()) return Collections.emptyList();
+
+        // MySql IN Query
+        List<Article> articles = articleRepository.findAllById(ids);
+
+        // List -> Map 为了O(1)查找
+        Map<Long, Article> map = articles.stream()
+                .collect(Collectors.toMap(Article::getId, Function.identity()));
+
+        // 按 ids 的顺序（因为ids的顺序就是推荐分数的顺序）重组 List
+        return ids.stream()
+                .map(map::get)
+                .filter(Objects::nonNull) // 防御性判空
+                .map(article -> buildArticleResponse(article, currentUser).article())
+                .collect(Collectors.toList());
+    }
+
+    // 工具: String "0.1,0.2..." -> float[]
+    private float[] parseEmbeddingString(String str) {
+        if (str == null || str.isBlank()) return null;
+        String[] parts = str.split(",");
+        float[] res = new float[parts.length];
+        for (int i = 0; i < parts.length; i++) res[i] = Float.parseFloat(parts[i]);
+        return res;
     }
 
 }

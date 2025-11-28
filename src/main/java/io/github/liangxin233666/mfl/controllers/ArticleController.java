@@ -4,6 +4,8 @@ import io.github.liangxin233666.mfl.dtos.ArticleResponse;
 import io.github.liangxin233666.mfl.dtos.MultipleArticlesResponse;
 import io.github.liangxin233666.mfl.dtos.NewArticleRequest;
 import io.github.liangxin233666.mfl.dtos.UpdateArticleRequest;
+import io.github.liangxin233666.mfl.entities.Article;
+import io.github.liangxin233666.mfl.entities.es.ArticleDocument;
 import io.github.liangxin233666.mfl.services.ArticleService;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Pageable;
@@ -13,6 +15,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/articles")
@@ -93,5 +97,20 @@ public class ArticleController {
             @AuthenticationPrincipal UserDetails currentUser) {
         MultipleArticlesResponse response = articleService.getFeedArticles(pageable, currentUser);
         return ResponseEntity.ok(response);
+    }
+    @GetMapping("/recommend")
+    public ResponseEntity<MultipleArticlesResponse> getRecommendedFeed(
+            @AuthenticationPrincipal UserDetails currentUserDetails) {
+        MultipleArticlesResponse response=articleService.getRecommendedFeed(currentUserDetails);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/{slug}/related")
+    public ResponseEntity<MultipleArticlesResponse> getRelatedArticles(
+            @PathVariable String slug,
+            @AuthenticationPrincipal UserDetails currentUserDetails) {
+        MultipleArticlesResponse response=articleService.getRelatedArticles(slug,currentUserDetails);
+        return ResponseEntity.ok(response);
+
     }
 }

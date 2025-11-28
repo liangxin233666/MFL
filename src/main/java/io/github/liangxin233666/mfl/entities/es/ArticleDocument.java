@@ -39,4 +39,7 @@ public class ArticleDocument {
     @Field(type = FieldType.Date)
     private OffsetDateTime createdAt;
 
+
+    @Field(type = FieldType.Dense_Vector, dims = 768)
+    private float[] embeddingVector;
 }

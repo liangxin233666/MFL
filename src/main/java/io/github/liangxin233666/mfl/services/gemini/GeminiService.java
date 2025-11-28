@@ -2,13 +2,15 @@ package io.github.liangxin233666.mfl.services.gemini;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.genai.Client;
-import com.google.genai.types.GenerateContentResponse;
+import com.google.genai.types.*; // 包含 EmbedContentConfig, EmbedContentResponse, ContentEmbedding 等
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 
+@Slf4j
 @Service
 public class GeminiService {
 
@@ -16,6 +18,8 @@ public class GeminiService {
     private final Client client;
     private final ObjectMapper objectMapper;
     private static final String MODEL_NAME = "gemini-2.5-flash"; // 追求速度就用 flash
+    private static final String EMBEDDING_MODEL = "gemini-embedding-001";
+
 
     public GeminiService(@Value("${gemini.api.key}") String apiKey, ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
@@ -82,7 +86,7 @@ public class GeminiService {
           "keywords": [],
           "reason": "违反相关法律，包含露骨R18色情描写。"
         }
-        """.formatted(title, body.length() > 4000 ? body.substring(0, 4000) : body);
+        """.formatted(title, body.length() > 2000 ? body.substring(0, 2000) : body);
 
         try {
             // 2. 调用 SDK！就是这么简单！
@@ -96,13 +100,15 @@ public class GeminiService {
             String jsonText = response.text();
 
             // 清洗一下 Markdown 代码块（Gemini 有时候不听话还是会给 ```json ... ```）
-            if (jsonText.startsWith("```json")) {
+            if (jsonText != null && jsonText.startsWith("```json")) {
                 jsonText = jsonText.substring(7);
             }
-            if (jsonText.endsWith("```")) {
+            if (jsonText != null && jsonText.endsWith("```")) {
                 jsonText = jsonText.substring(0, jsonText.length() - 3);
             }
-            jsonText = jsonText.trim();
+            if (jsonText != null) {
+                jsonText = jsonText.trim();
+            }
 
             // 4. 解析结果
             return objectMapper.readValue(jsonText, AnalysisResult.class);
@@ -111,6 +117,53 @@ public class GeminiService {
             // 这里既包含了网络错误，也包含了 JSON 解析错误
             // 在生产环境可以分细一点记录
             throw new RuntimeException("Gemini analysis failed", e);
+        }
+    }
+
+    public float[] generateEmbedding(String text) {
+        if (text == null || text.isBlank()) {
+            return new float[768]; // 或者返回 null，视业务需要
+        }
+
+        try {
+            // 1. 配置：指定输出维度 768
+            EmbedContentConfig config = EmbedContentConfig.builder()
+                    .outputDimensionality(768)
+                    .build();
+
+            // 2. 调用 SDK：注意这里直接传 String text，不需要构造 Content 对象
+            // 对应你反编译看到的：embedContent(String model, String text, EmbedContentConfig config)
+            EmbedContentResponse response = client.models.embedContent(
+                    EMBEDDING_MODEL,
+                    text,
+                    config
+            );
+
+            // 3. 解析结果：注意处理 Optional 和 List
+            // 源码显示：public Optional<List<ContentEmbedding>> embeddings()
+            Optional<List<ContentEmbedding>> embeddingsOpt = response.embeddings();
+
+            if (embeddingsOpt.isEmpty() || embeddingsOpt.get().isEmpty()) {
+                throw new RuntimeException("Gemini API returned empty embeddings");
+            }
+
+
+            // 获取具体的向量值 (List<Float>)
+            List<Float> values = response.embeddings()
+                    .flatMap(list -> list.stream().findFirst()) // 取列表第一个 ContentEmbedding
+                    .flatMap(ContentEmbedding::values)          // 取里面的 values (也是 Optional)
+                    .orElseThrow(() -> new RuntimeException("Failed to generate embedding"));
+
+            float[] vector = new float[values.size()];
+            for (int i = 0; i < values.size(); i++) {
+                vector[i] = values.get(i);
+            }
+            return vector;
+
+        } catch (Exception e) {
+
+            log.error("Gemini API generation failed", e);
+            throw new RuntimeException("Embedding generation failed", e);
         }
     }
 }

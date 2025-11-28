@@ -1,16 +1,17 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import {ref, onMounted, computed, watch} from 'vue';
 import { useRoute } from 'vue-router';
 import apiClient from '../api/apiClient';
 import type { Article, Comment } from '../types/api';
 import { marked } from 'marked';
 import { useAuthStore } from '../stores/auth';
-
+import ArticlePreview from '../components/ArticlePreview.vue';
 // 导入所有需要的组件和图标
 import UserInfo from '../components/UserInfo.vue';
 import CommentItem from '../components/CommentItem.vue';
 import { ShareIcon, StarIcon, ChatBubbleBottomCenterTextIcon, PlusIcon, CheckIcon,TagIcon } from '@heroicons/vue/24/solid';
 import router from "../router";
+import {ASSETS} from "../config/assets.ts";
 
 // --- 核心状态 ---
 const route = useRoute();
@@ -32,7 +33,8 @@ const isSubmittingTopComment = ref(false);
 // --- 点赞/关注状态 ---
 const isFavoriting = ref(false);
 const isFollowing = ref(false);
-
+const relatedArticles = ref<Article[]>([]);
+const isRelatedLoading = ref(false);
 
 // --- API 调用与逻辑 ---
 const fetchComments = async (page = 0) => {
@@ -47,6 +49,18 @@ const fetchComments = async (page = 0) => {
     commentsCurrentPage.value = page;
   } finally {
     isCommentsLoading.value = false;
+  }
+};
+
+const fetchRelatedArticles = async (slug: string) => {
+  isRelatedLoading.value = true;
+  try {
+    const response = await apiClient.get<{ articles: Article[] }>(`/articles/${slug}/related`);
+    relatedArticles.value = response.data.articles;
+  } catch (error) {
+    console.error("加载相关文章失败:", error);
+  } finally {
+    isRelatedLoading.value = false;
   }
 };
 
@@ -73,13 +87,38 @@ onMounted(async () => {
   try {
     const articleRes = await apiClient.get<{ article: Article }>(`/articles/${slug}`);
     article.value = articleRes.data.article;
-    await fetchComments(0);
+
+    // 并行获取评论和相关文章
+    await Promise.all([
+      fetchComments(0),
+      fetchRelatedArticles(slug) // [新增] 调用获取相关文章
+    ]);
   } catch (error) {
     console.error("获取文章详情失败:", error);
   } finally {
     isLoading.value = false;
   }
 });
+
+// [建议新增] 监听路由 slug 变化，支持从“相关文章”点击后跳转刷新
+watch(
+    () => route.params.slug,
+    async (newSlug) => {
+      if (newSlug) {
+        isLoading.value = true;
+        // 重置评论区状态
+        comments.value = [];
+        try {
+          const articleRes = await apiClient.get<{ article: Article }>(`/articles/${newSlug as string}`);
+          article.value = articleRes.data.article;
+          await fetchComments(0);
+          await fetchRelatedArticles(newSlug as string); // [新增] 重新获取相关文章
+        } finally {
+          isLoading.value = false;
+        }
+      }
+    }
+);
 
 const searchByTag = (tag: string) => {
   router.push({
@@ -212,6 +251,43 @@ const renderedBody = computed(() => article.value?.body ? marked.parse(article.v
           </div>
         </div>
       </div>
+
+      <div v-if="relatedArticles.length > 0" class="card bg-base-100 shadow-md sticky top-24">
+        <div class="card-body p-4">
+          <h3 class="font-bold text-lg mb-4 flex items-center gap-2 border-l-4 border-pink-500 pl-3">
+            相关推荐
+          </h3>
+
+          <div class="flex flex-col gap-4">
+            <!-- 循环展示相关文章 -->
+            <div v-for="related in relatedArticles" :key="related.slug">
+              <!--
+                 此处 ArticlePreview 需要是 "紧凑模式"
+                 通常不需要做额外改动，因为它宽度变小了会自动适应，
+                 或者我们可以把 UserInfo 头像缩小一点。
+               -->
+              <router-link :to="'/article/' + related.slug">
+                <ArticlePreview
+                    :image-url="related.coverImageUrl||ASSETS.defaults.articleCoverD"
+                    :title="related.title"
+                    :views-count="related.favoritesCount || 0"
+                    :comments-count="0"
+                    :author="related.author"
+                    :article-slug="related.slug"
+                />
+              </router-link>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- [新增] 加载骨架屏 (可选) -->
+      <div v-else-if="isRelatedLoading" class="card bg-base-100 shadow-md h-60">
+        <div class="card-body flex items-center justify-center">
+          <span class="loading loading-spinner loading-md text-pink-500"></span>
+        </div>
+      </div>
+
     </aside>
   </div>
   <div v-else class="text-center py-20 text-xl font-bold">文章不存在或加载失败</div>

@@ -151,4 +151,40 @@ public class UserService {
     private User findUserById(Long id) {
         return userRepository.findById(id).orElseThrow(() -> new  ResourceNotFoundException("User not found for id: " + id));
     }
+
+    // 简单的向量加权平均
+    public String updateUserEmbedding(String oldEmbeddingStr, float[] newArticleVector) {
+        float[] oldVector = parseEmbedding(oldEmbeddingStr); // 字符串转float[]
+        if (oldVector == null) {
+            // 如果用户是新的，直接用当前文章向量作为初始兴趣
+            return serializeEmbedding(newArticleVector);
+        }
+
+        // 移动平均: 0.8 旧兴趣 + 0.2 新兴趣
+        float alpha = 0.2f;
+        for (int i = 0; i < oldVector.length; i++) {
+            oldVector[i] = oldVector[i] * (1 - alpha) + newArticleVector[i] * alpha;
+        }
+
+        return serializeEmbedding(oldVector);
+    }
+
+    // 工具: String -> float[]
+    private float[] parseEmbedding(String str) {
+        if (str == null || str.isBlank()) return null;
+        String[] parts = str.split(",");
+        float[] res = new float[parts.length];
+        for(int i=0; i<parts.length; i++) res[i] = Float.parseFloat(parts[i]);
+        return res;
+    }
+
+    // 工具: float[] -> String
+    private String serializeEmbedding(float[] vec) {
+        StringBuilder sb = new StringBuilder();
+        for (int i=0; i<vec.length; i++) {
+            if (i > 0) sb.append(",");
+            sb.append(vec[i]);
+        }
+        return sb.toString();
+    }
 }
