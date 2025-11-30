@@ -51,8 +51,6 @@ public class RecommendationService {
                     ArticleDocument.class
             );
 
-            long totalHits = response.hits().total().value();
-            log.info("【Debug】ES 返回总命中数: {}", totalHits);
 
             List<Long> resultIds = new ArrayList<>();
 
@@ -61,18 +59,15 @@ public class RecommendationService {
                 ArticleDocument doc = hit.source();
                 String metaId = hit.id(); // ES 的 _id
 
-                log.info("【Debug】命中详情 -> MetaID(_id): {}, SourceObj: {}", metaId, doc);
 
                 if (doc != null) {
-                    log.info("【Debug】ObjID(doc.getId()): {}", doc.getId());
                     if (doc.getId() != null) {
                         resultIds.add(doc.getId());
                     } else {
-                        log.error("【Debug】严重警报！获取到的对象 id 为 null，可能是字段名映射错误！");
-                        // 补救措施尝试：如果是 String _id，试着解析它
+
                         try {
                             resultIds.add(Long.parseLong(metaId));
-                            log.info("【Debug】补救成功：使用了 MetaID");
+
                         } catch (Exception e) {}
                     }
                 } else {

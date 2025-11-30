@@ -89,3 +89,32 @@ export interface HistoryRecord {
     };
 }
 
+export interface Plugin {
+    id: number;
+    name: string;
+    slug: string;
+    description: string;
+    version: string;
+    fileUrl: string; // MinIO / OSS 地址
+    iconUrl: string | null;
+    authorName: string;
+    downloads: number; // 动态数据，本地不存
+    updatedAt: string; // 动态数据，本地不存
+}
+
+// 本地存储的插件结构 (剔除下载量等动态数据，保留所有展示信息)
+export interface LocalPluginState {
+    id: number;      // 对应 Plugin.id
+    slug: string;
+    name: string;
+    description: string;
+    version: string;
+    fileUrl: string;
+    iconUrl: string | null;
+    authorName: string;
+
+    // 本地特有状态
+    isEnabled: boolean;
+    installedAt: number;
+}
+

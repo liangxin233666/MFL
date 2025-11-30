@@ -1,5 +1,5 @@
 // src/composables/useUploader.ts
-import { ref } from 'vue';
+import {ref} from 'vue';
 import apiClient from '../api/apiClient';
 import axios from 'axios';
 
@@ -33,8 +33,7 @@ export function useUploader() {
             });
 
             // Step 3: 获取并返回 tempUrl (去掉查询参数的部分)
-            const tempUrl = uploadUrl.split('?')[0];
-            return tempUrl;
+            return uploadUrl.split('?')[0];
 
         } catch (error: any) {
             console.error("上传失败:", error);

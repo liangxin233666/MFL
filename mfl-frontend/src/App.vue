@@ -13,6 +13,7 @@ import {
   UserCircleIcon,
   Cog6ToothIcon,
   ArrowLeftStartOnRectangleIcon,
+  PuzzlePieceIcon,
 } from '@heroicons/vue/24/outline';
 import {useNotificationStore} from "./stores/notification.ts";
 import router from "./router";
@@ -150,6 +151,17 @@ const handleLogout = () => {
               <div class="flex flex-col items-center">
                 <ClockIcon class="h-6 w-6" />
                 <span class="text-xs">历史</span>
+              </div>
+            </router-link>
+
+            <router-link
+                to="/market"
+                active-class="text-pink-500"
+                class="btn btn-ghost btn-circle hidden sm:inline-flex"
+            >
+              <div class="flex flex-col items-center">
+                <PuzzlePieceIcon class="h-6 w-6" />
+                <span class="text-xs">插件</span>
               </div>
             </router-link>
 

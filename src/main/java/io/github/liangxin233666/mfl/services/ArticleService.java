@@ -583,7 +583,7 @@ public class ArticleService {
     @Transactional(readOnly = true)
     public MultipleArticlesResponse getRecommendedFeed(UserDetails currentUserDetails) {
         // 1. 捞用户画像 (从 DB/Redis)
-        User user = findUserById(Long.valueOf(currentUserDetails.getUsername()));
+        User user = currentUserDetails==null?null:findUserById(Long.valueOf(currentUserDetails.getUsername()));
         if (user == null) return getArticles(null,null,null, PageRequest.of(0, 16));
 
         // 2. 解析 Vector 字符串 -> float[]
