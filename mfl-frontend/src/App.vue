@@ -34,7 +34,7 @@ const startPolling = () => {
     if (authStore.isAuthenticated) {
       notificationStore.fetchUnreadCount();
     }
-  }, 30000);
+  }, 180000);
 };
 const globalSearchQuery = ref('');
 

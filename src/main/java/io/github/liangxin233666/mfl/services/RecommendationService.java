@@ -5,6 +5,7 @@ import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import io.github.liangxin233666.mfl.entities.es.ArticleDocument;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -14,10 +15,11 @@ import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class RecommendationService {
 
-    // 重点：直接注入官方原生 Client，绕过 Spring Data 的限制，发挥 ES 8.11 的全部实力
+
     private final ElasticsearchClient esClient;
 
     public RecommendationService(ElasticsearchClient esClient) {
@@ -29,33 +31,60 @@ public class RecommendationService {
      * 最佳实践: 使用 Top-level knn 参数 + Pre-filtering
      */
     public List<Long> recommendForUser(float[] userVector, int limit) {
-        if (userVector == null || userVector.length == 0) {
-            return Collections.emptyList();
-        }
-
+        if (userVector == null || userVector.length == 0) return Collections.emptyList();
         List<Float> queryVector = toFloatList(userVector);
 
         try {
+            log.info("【Debug】开始搜索，limit={}, 向量维度={}", limit, queryVector.size());
+
             SearchResponse<ArticleDocument> response = esClient.search(s -> s
-                            .index("articles") // 指定索引名
+                            .index("articles")
                             .knn(k -> k
-                                    .field("embeddingVector")
-                                    .queryVector(queryVector)
-                                    .k(limit)
-                                    .numCandidates(Math.max(50, limit * 10)) // 提高召回精度
-                                    // 【关键优化】Pre-filtering: 在遍历向量图之前过滤，性能极高
-                                    .filter(f -> f.term(t -> t.field("status").value("PUBLISHED")))
+                                            .field("embeddingVector")
+                                            .queryVector(queryVector)
+                                            .k(limit)
+                                            .numCandidates(100)
+
                             )
-                            .source(src -> src.filter(f -> f.includes("id"))) // 只取ID，减少网络传输
+                            .source(src -> src.filter(f -> f.includes("id")))
                             .size(limit),
                     ArticleDocument.class
             );
 
-            return extractIds(response);
+            long totalHits = response.hits().total().value();
+            log.info("【Debug】ES 返回总命中数: {}", totalHits);
 
-        } catch (IOException e) {
-            // 建议接入你的日志系统
-            e.printStackTrace();
+            List<Long> resultIds = new ArrayList<>();
+
+            // 遍历命中的每一条
+            for (Hit<ArticleDocument> hit : response.hits().hits()) {
+                ArticleDocument doc = hit.source();
+                String metaId = hit.id(); // ES 的 _id
+
+                log.info("【Debug】命中详情 -> MetaID(_id): {}, SourceObj: {}", metaId, doc);
+
+                if (doc != null) {
+                    log.info("【Debug】ObjID(doc.getId()): {}", doc.getId());
+                    if (doc.getId() != null) {
+                        resultIds.add(doc.getId());
+                    } else {
+                        log.error("【Debug】严重警报！获取到的对象 id 为 null，可能是字段名映射错误！");
+                        // 补救措施尝试：如果是 String _id，试着解析它
+                        try {
+                            resultIds.add(Long.parseLong(metaId));
+                            log.info("【Debug】补救成功：使用了 MetaID");
+                        } catch (Exception e) {}
+                    }
+                } else {
+                    log.error("【Debug】Hit.source() 为 null！可能是 JSON 反序列化失败");
+                }
+            }
+
+            log.info("【Debug】最终返回给 MySQL 的 ID 列表: {}", resultIds);
+            return resultIds;
+
+        } catch (Exception e) {
+            log.error("【Debug】ES 查询报错: ", e);
             return Collections.emptyList();
         }
     }
@@ -76,7 +105,7 @@ public class RecommendationService {
             SearchResponse<ArticleDocument> response = esClient.search(s -> s
                             .index("articles")
 
-                            // 1. 向量部分 (语义相关)
+                            // 1. 向量部分 (语义相关) - 权重 0.5
                             .knn(k -> {
                                 if (queryVector != null) {
                                     return k
@@ -84,16 +113,17 @@ public class RecommendationService {
                                             .queryVector(queryVector)
                                             .k(limit)
                                             .numCandidates(50)
-                                            // 预过滤：必须排除当前文章本身，且必须是已发布
+                                            .boost(0.5f) // 【关键修改】设置权重
+                                            // 预过滤
                                             .filter(f -> f.bool(b -> b
                                                     .mustNot(mn -> mn.ids(i -> i.values(docId)))
-                                                    .must(m -> m.term(t -> t.field("status").value("PUBLISHED")))
+                                                    //.must(m -> m.term(t -> t.field("status").value("PUBLISHED")))
                                             ));
                                 }
-                                return null; // 如果没有向量，此部分会被忽略
+                                return null;
                             })
 
-                            // 2. 文本部分 (内容/标签相关)
+                            // 2. 文本部分 (内容/标签相关) - 权重 0.5
                             .query(q -> q
                                     .bool(b -> b
                                             .must(m -> m.moreLikeThis(mlt -> mlt
@@ -102,18 +132,13 @@ public class RecommendationService {
                                                     .minTermFreq(1)
                                                     .minDocFreq(1)
                                             ))
-                                            // 文本查询也要排除自己 (虽然 KNN 排除了，但 Query 部分也需要逻辑一致)
                                             .mustNot(mn -> mn.ids(i -> i.values(docId)))
-                                            .filter(f -> f.term(t -> t.field("status").value("PUBLISHED")))
+                                            //.filter(f -> f.term(t -> t.field("status").value("PUBLISHED")))
+                                            .boost(0.5f) // 【关键修改】设置权重，与 knn 累加
                                     )
                             )
 
-                            // 3. RRF 排名融合 (ES 8.x 杀手级特性)
-                            // 只有当同时存在 knn 和 query 时，rank 才会生效融合两者
-                            // 如果只有 query 或只有 knn，ES 会自动降级为标准排序，非常智能
-                            .rank(r -> r
-                                    .rrf(rrf -> rrf) // 什么都不设，直接返回 builder，使用 ES 默认配置
-                            )
+                            // 【关键修改】彻底删除 .rank(...) 部分，避免 License 报错
 
                             .source(src -> src.filter(f -> f.includes("id")))
                             .size(limit),
@@ -124,7 +149,8 @@ public class RecommendationService {
             return extractIds(response);
 
         } catch (IOException e) {
-            e.printStackTrace();
+
+            log.error("有错误 ",e);
             return Collections.emptyList();
         }
     }

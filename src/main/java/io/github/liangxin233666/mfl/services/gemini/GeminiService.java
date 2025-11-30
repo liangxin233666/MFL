@@ -15,16 +15,26 @@ import java.util.Optional;
 public class GeminiService {
 
     // 用 final 保存 Client，因为它是线程安全的，可以复用
-    private final Client client;
-    private final ObjectMapper objectMapper;
-    private static final String MODEL_NAME = "gemini-2.5-flash"; // 追求速度就用 flash
-    private static final String EMBEDDING_MODEL = "gemini-embedding-001";
 
+    private final ObjectMapper objectMapper;
+    private static final String MODEL_NAME = "gemini-2.5-flash-lite"; // 追求速度就用 flash
+    private static final String EMBEDDING_MODEL = "gemini-embedding-001";
+    private final String apiKey;
 
     public GeminiService(@Value("${gemini.api.key}") String apiKey, ObjectMapper objectMapper) {
+        this.apiKey = apiKey;
         this.objectMapper = objectMapper;
-        // 初始化官方 SDK Client
-        this.client = Client.builder().apiKey(apiKey).build();
+
+    }
+
+    // 获取 Client 的辅助方法
+    private Client getClient() {
+        // 这里的 builder 创建开销很小。
+        // 在本地代理不稳定的情况下，每次 new 一个能有效避免 "僵尸连接" 问题
+        return Client.builder()
+                .apiKey(apiKey)
+                // 如果 SDK 支持设置超时，请务必在这里设置，例如 .connectTimeout(...)
+                .build();
     }
 
     /**
@@ -86,16 +96,28 @@ public class GeminiService {
           "keywords": [],
           "reason": "违反相关法律，包含露骨R18色情描写。"
         }
-        """.formatted(title, body.length() > 2000 ? body.substring(0, 2000) : body);
+        """.formatted(title, body.length() > 4000 ? body.substring(0, 4000) : body);
 
         try {
+            System.setProperty("http.keepAlive", "false");
+            System.setProperty("https.keepAlive", "false");
+
+            // 2. 重新设置代理 (防止被其他线程覆盖)
+            System.setProperty("http.proxyHost", "127.0.0.1");
+            System.setProperty("http.proxyPort", "20085");
+            System.setProperty("https.proxyHost", "127.0.0.1");
+            System.setProperty("https.proxyPort", "20085");
+
+            // 3. 每次请求 New 一个 Client (不要用成员变量)
+            Client client = Client.builder().apiKey(apiKey).build();
+
             // 2. 调用 SDK！就是这么简单！
             GenerateContentResponse response = client.models.generateContent(
                     MODEL_NAME,
                     prompt,
                     null // config 可选
             );
-
+            log.info("收到回复");
             // 3. 获取 AI 的纯文本回复
             String jsonText = response.text();
 
@@ -116,6 +138,7 @@ public class GeminiService {
         } catch (Exception e) {
             // 这里既包含了网络错误，也包含了 JSON 解析错误
             // 在生产环境可以分细一点记录
+            log.error("审核过程出错", e);
             throw new RuntimeException("Gemini analysis failed", e);
         }
     }
@@ -126,6 +149,8 @@ public class GeminiService {
         }
 
         try {
+            Client client = getClient();
+
             // 1. 配置：指定输出维度 768
             EmbedContentConfig config = EmbedContentConfig.builder()
                     .outputDimensionality(768)
