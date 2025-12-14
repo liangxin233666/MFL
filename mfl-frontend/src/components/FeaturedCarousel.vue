@@ -6,7 +6,7 @@ import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/vue/24/solid';
 const slides = ref([
   {
     image: 'http://localhost:9000/realworld-media/assets/%E5%B1%8F%E5%B9%95%E6%88%AA%E5%9B%BE%202025-07-29%20232554.png',
-    title: '女仆炮姐？黑子狂喜！',
+    title: '常盘台夏日祭',
     buttonText: '立即前往',
   },
   {
@@ -16,7 +16,7 @@ const slides = ref([
   },
   {
     image: 'http://localhost:9000/realworld-media/assets/%E5%B1%8F%E5%B9%95%E6%88%AA%E5%9B%BE(54).png',
-    title: '次元斩·绝 对绝 审判',
+    title: '动作游戏天尊',
     buttonText: '观看视频',
   },
 ]);

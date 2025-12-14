@@ -60,6 +60,7 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
 
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/", "/index.html", "/assets/**", "/static/**", "/*.ico", "/*.js", "/*.css").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/articles/**", "/api/profiles/**","/api/tags").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/users", "/api/users/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/search/**").permitAll()

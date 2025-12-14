@@ -13,29 +13,31 @@ import io.github.liangxin233666.mfl.repositories.ArticleRepository;
 import io.github.liangxin233666.mfl.repositories.TagRepository;
 import io.github.liangxin233666.mfl.repositories.UserRepository;
 import io.github.liangxin233666.mfl.repositories.es.EsArticleRepository;
+import io.github.liangxin233666.mfl.repositories.projections.ArticleSimpleView;
 import jakarta.persistence.criteria.Join;
 import jakarta.validation.Valid;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.security.access.AccessDeniedException;
+import org.springframework.cache.annotation.CacheEvict;
+
+import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import org.springframework.cache.annotation.Cacheable;
-import org.springframework.cache.annotation.CacheEvict;
 
-
+@Slf4j
 @Service
 public class ArticleService {
 
@@ -50,33 +52,33 @@ public class ArticleService {
     private final EsArticleRepository esArticleRepository;
     private final UserService userService;
     private final RecommendationService recommendationService;
+    private final GlobalTrendManager globalTrendManager;
 
 
     private static final Pattern TEMP_URL_PATTERN = Pattern.compile("https://?[^\\s\"]*/uploads/temp/[^\\s\")]+");
-
     private static final String URL_REGEX = "\\b(https?|ftp|file)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[-a-zA-Z0-9+&@#/%=~_|]";
     private static final Pattern URL_PATTERN = Pattern.compile(URL_REGEX);
 
 
-    public ArticleService(ArticleRepository articleRepository, UserRepository userRepository, TagRepository tagRepository, FileStorageService fileStorageService, NotificationProducer notificationProducer,HistoryService  historyService,RabbitTemplate rabbitTemplate, EsArticleRepository esArticleRepository, UserService userService, RecommendationService recommendationService) {
+    public ArticleService(ArticleRepository articleRepository, UserRepository userRepository, TagRepository tagRepository, FileStorageService fileStorageService, NotificationProducer notificationProducer, HistoryService historyService, RabbitTemplate rabbitTemplate, EsArticleRepository esArticleRepository, UserService userService, RecommendationService recommendationService, GlobalTrendManager globalTrendManager) {
         this.articleRepository = articleRepository;
         this.userRepository = userRepository;
         this.tagRepository = tagRepository;
         this.slugify = Slugify.builder().build();
         this.fileStorageService = fileStorageService;
-        this.notificationProducer=notificationProducer;
+        this.notificationProducer = notificationProducer;
         this.historyService = historyService;
         this.rabbitTemplate = rabbitTemplate;
         this.esArticleRepository = esArticleRepository;
         this.userService = userService;
         this.recommendationService = recommendationService;
+        this.globalTrendManager = globalTrendManager;
     }
 
     @Transactional
     public ArticleResponse createArticle(@Valid NewArticleRequest request, UserDetails currentUserDetails) {
 
         User author = findUserById(Long.valueOf(currentUserDetails.getUsername()));
-
 
         Set<Tag> tags = processTagsEfficiently(new HashSet<>(request.article().tagList()));
 
@@ -107,21 +109,21 @@ public class ArticleService {
         Article savedArticle = articleRepository.save(article);
 
         rabbitTemplate.convertAndSend(RabbitMqAuditConfig.AUDIT_QUEUE, savedArticle.getId());
+
+        log.info(savedArticle.getId().toString());
+
+        // 写操作虽然返回简单视图，但手头已经有Entity，直接复用Entity版
         return buildArticleResponseSimply(savedArticle);
     }
 
 
     private Set<Tag> processTagsEfficiently(Set<String> tagNames) {
-
         if (tagNames == null || tagNames.isEmpty()) {
             return Collections.emptySet();
         }
-
         Set<Tag> existingTags = tagRepository.findByNameIn(tagNames);
-
         Map<String, Tag> existingTagsMap = existingTags.stream()
                 .collect(Collectors.toMap(Tag::getName, Function.identity()));
-
         List<Tag> tagsToSave = tagNames.stream()
                 .filter(name -> !existingTagsMap.containsKey(name))
                 .map(name -> {
@@ -130,31 +132,24 @@ public class ArticleService {
                     return newTag;
                 })
                 .collect(Collectors.toList());
-
-
         if (!tagsToSave.isEmpty()) {
-
-           tagRepository.saveAll(tagsToSave);
+            tagRepository.saveAll(tagsToSave);
         }
-
         existingTags.addAll(tagsToSave);
         return existingTags;
     }
 
     private String generateUniqueSlug(String title) {
         int r = ThreadLocalRandom.current().nextInt(100000, 1000000);
-        String uniqueSlug= slugify.slugify(title)+"-"+r;
-
-        // 最多一次查询来确认slug是否唯一。只有在发生冲突时才会有额外的查询。
+        String uniqueSlug = slugify.slugify(title) + "-" + r;
         while (articleRepository.findBySlug(uniqueSlug).isPresent()) {
             int randomNumber = ThreadLocalRandom.current().nextInt(100000, 1000000);
-            uniqueSlug +=("-" + randomNumber);
-
+            uniqueSlug += ("-" + randomNumber);
         }
         return uniqueSlug;
     }
 
-    //回复详细信息
+    // 详细信息（Get Single）- 仍需 Body，保持原样
     private ArticleResponse buildArticleResponse(Article article, User currentUser) {
         List<String> tagList = article.getTags().stream()
                 .map(Tag::getName)
@@ -190,79 +185,90 @@ public class ArticleService {
         return new ArticleResponse(articleDto);
     }
 
+    // --- 保留Entity版本供 write操作复用 ---
     private ArticleResponse buildArticleResponseSimply(Article article) {
-        User author = article.getAuthor();
-        ProfileResponse.ProfileDto authorProfile = new ProfileResponse.ProfileDto(
-                author.getUsername(),
-                null,
-                author.getImage(),
-                null
-        );
-
-        ArticleResponse.ArticleDto articleDto = new ArticleResponse.ArticleDto(
-                article.getSlug(),
-                article.getTitle(),
-                article.getDescription(),
-                null,
-                null,
-                article.getCreatedAt(),
-                article.getUpdatedAt(),
-                null,
-                article.getFavoritesCount(),
-                article.getCoverImageUrl(),
-                authorProfile
-        );
-
-        return new ArticleResponse(articleDto);
+        return buildArticleResponseSimply(article, null);
     }
 
-    //回复大概信息
-    private ArticleResponse buildArticleResponseSimply(Article article,Boolean isFavorited) {
+    // --- 保留Entity版本供 write操作复用 (带 favorited 参数) ---
+    private ArticleResponse buildArticleResponseSimply(Article article, Boolean isFavorited) {
         User author = article.getAuthor();
+        return getArticleResponse(isFavorited, author.getUsername(), author.getImage(), article.getSlug(), article.getTitle(), article.getDescription(), article.getCreatedAt(), article.getUpdatedAt(), article.getFavoritesCount(), article.getCoverImageUrl());
+    }
+
+    // ==========================================
+    // NEW: 核心改造点 - 投影版本的 buildResponse
+    // ==========================================
+    private ArticleResponse buildArticleResponseSimply(ArticleSimpleView view, Boolean isFavorited) {
+        // 从投影的 Nested Interface 获取 Author 信息
+        ArticleSimpleView.AuthorView authorView = view.getAuthor();
+        return getArticleResponse(isFavorited, authorView.getUsername(), authorView.getImage(), view.getSlug(), view.getTitle(), view.getDescription(), view.getCreatedAt(), view.getUpdatedAt(), view.getFavoritesCount(), view.getCoverImageUrl());
+    }
+
+    private ArticleResponse getArticleResponse(Boolean isFavorited, String username, String image, String slug, String title, String description, OffsetDateTime createdAt, OffsetDateTime updatedAt, Integer favoritesCount, String coverImageUrl) {
         ProfileResponse.ProfileDto authorProfile = new ProfileResponse.ProfileDto(
-                author.getUsername(),
+                username,
                 null,
-                author.getImage(),
+                image,
                 null
         );
 
         ArticleResponse.ArticleDto articleDto = new ArticleResponse.ArticleDto(
-                article.getSlug(),
-                article.getTitle(),
-                article.getDescription(),
+                slug,
+                title,
+                description,
+                null, // 投影压根没查 Body，所以为 null，极致性能
                 null,
-                null,
-                article.getCreatedAt(),
-                article.getUpdatedAt(),
+                createdAt,
+                updatedAt,
                 isFavorited,
-                article.getFavoritesCount(),
-                article.getCoverImageUrl(),
+                favoritesCount,
+                coverImageUrl,
                 authorProfile
         );
 
         return new ArticleResponse(articleDto);
     }
-
 
 
     private User findUserById(Long id) {
-        return userRepository.findById(id).orElseThrow(() -> new  ResourceNotFoundException("User not found for id: " + id));
+        return userRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("User not found for id: " + id));
     }
 
     @CacheEvict(value = "articles", key = "#slug")
     @Transactional
     public void deleteArticle(String slug, UserDetails currentUserDetails) {
-        Article article = findArticleBySlug(slug);
-        User currentUser = findUserById(Long.valueOf(currentUserDetails.getUsername()));
+        Article article = articleRepository.findBySlug(slug)
+                .orElseThrow(() -> new ResourceNotFoundException("Article not found"));
 
-        // ** 权限校验 **
-        if (!article.getAuthor().equals(currentUser)) {
+        User currentUser = userRepository.findById(Long.valueOf(currentUserDetails.getUsername()))
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        boolean isAdmin = currentUserDetails.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+
+        if (!article.getAuthor().equals(currentUser) && !isAdmin) {
             throw new AccessDeniedException("You are not the author of this article.");
         }
 
+        List<String> filesToDelete = new ArrayList<>();
+        if (article.getCoverImageUrl() != null) {
+            filesToDelete.add(article.getCoverImageUrl());
+        }
+        filesToDelete.addAll(extractUrls(article.getBody(), article.getCoverImageUrl()));
+
         articleRepository.delete(article);
+
+        try {
+            esArticleRepository.deleteById(article.getId());
+        } catch (Exception e) {
+            log.error("Failed to delete article index from ES: {}", article.getId(), e);
+        }
+
+        fileStorageService.deleteFilesAsync(filesToDelete);
     }
 
+    // Write 操作仍保持 Entity，因为我们改变了关系状态
     @Transactional
     public ArticleResponse favoriteArticle(String slug, UserDetails currentUserDetails) {
         Article article = findArticleBySlug(slug);
@@ -273,7 +279,6 @@ public class ArticleService {
             article.setFavoritesCount(article.getFavoritesCount() + 1);
             Article savedArticle = articleRepository.save(article);
 
-            // [发送消息]
             notificationProducer.sendNotification(new NotificationEvent(
                     currentUser.getId(),
                     savedArticle.getAuthor().getId(),
@@ -283,8 +288,8 @@ public class ArticleService {
                     null
             ));
         }
-
-        return buildArticleResponseSimply(article,true);
+        // 返回时带上确定的true
+        return buildArticleResponseSimply(article, true);
     }
 
     @Transactional
@@ -293,12 +298,10 @@ public class ArticleService {
         User currentUser = findUserById(Long.valueOf(currentUserDetails.getUsername()));
 
         if (article.getFavoritedBy().contains(currentUser)) {
-
             article.getFavoritedBy().remove(currentUser);
-
             article.setFavoritesCount(Math.max(0, article.getFavoritesCount() - 1));
         }
-        return buildArticleResponseSimply(article);
+        return buildArticleResponseSimply(article, false);
     }
 
     private Article findArticleBySlug(String slug) {
@@ -306,46 +309,38 @@ public class ArticleService {
                 .orElseThrow(() -> new ResourceNotFoundException("Article not found with slug: " + slug));
     }
 
+    // ==============================================================
+    // 改动 1: searchArticles
+    // 逻辑：ES出ID -> ID出投影 -> 重组顺序 -> 批量查收藏状态 -> 构建Response
+    // ==============================================================
     @Transactional(readOnly = true)
     public MultipleArticlesResponse searchArticles(String query, Pageable pageable, UserDetails currentUserDetails) {
-        // 1. 获取当前用户 (用于判断 isFavorited/isFollowing)
         User currentUser = (currentUserDetails != null)
                 ? findUserById(Long.valueOf(currentUserDetails.getUsername()))
                 : null;
 
-        // 2. [ES 查询] 在 ES 索引中查找 ID 列表
-        // ES 会对 Title, Description, AiKeywords 三个字段同时检索
+        // 1. ES 查询获取相关性排序后的 Page
         Page<ArticleDocument> esPage = esArticleRepository.searchIdeally(query, pageable);
 
         if (esPage.isEmpty()) {
             return new MultipleArticlesResponse(List.of(), 0);
         }
 
-        // 3. [ID 提取]
+        // 2. 提取 ID 列表 (有序)
         List<Long> articleIds = esPage.getContent().stream()
                 .map(ArticleDocument::getId)
                 .collect(Collectors.toList());
 
-        // 4. [DB 回捞] 批量查数据库获取完整实体
-        List<Article> dbArticles = articleRepository.findAllById(articleIds);
+        // 3. 特殊查找方法：只查 Projection，不查 Body
+        // 4. 重组逻辑 (抽取通用方法处理)
+        List<ArticleResponse.ArticleDto> sortedDtos = fetchViewsByIdsAndPreserveOrder(articleIds, currentUser);
 
-        // 5. [内存重组] 关键步骤：ES 返回的顺序是按相关度排序的（Rank），而 DB 的 findAllById 不保证顺序。
-        //    所以我们需要手动按 articleIds 的顺序，重新把 dbArticles 排好。
-
-        //    技巧：先转成 Map<ID, Article> 方便查找
-        Map<Long, Article> articleMap = dbArticles.stream()
-                .collect(Collectors.toMap(Article::getId, Function.identity()));
-        List<ArticleResponse.ArticleDto> sortedDtos = articleIds.stream()
-                .map(articleMap::get) // 按 ES 给的 ID 顺序取对象
-                .filter(Objects::nonNull) // 防御性编程：理论上不会空，除非数据不同步
-                .map(article -> buildArticleResponseSimply(article).article()) // 转换为 DTO
-                .collect(Collectors.toList());
         return new MultipleArticlesResponse(sortedDtos, esPage.getTotalElements());
     }
 
-    //@Cacheable(value = "articles", key = "#slug")
     @Transactional
     public ArticleResponse getArticleBySlug(String slug, UserDetails currentUserDetails) {
+        // 这里必须用 findBySlug (Entity) 因为 getArticle 详情页通常需要 Body
         Article article = findArticleBySlug(slug);
 
         User currentUser = (currentUserDetails != null)
@@ -355,13 +350,11 @@ public class ArticleService {
         boolean isPublished = (article.getStatus() == Article.ArticleStatus.PUBLISHED);
 
         if (!isPublished && !isAuthor) {
-            // 如果既不是已发布，看的人也不是作者本人 -> 404 或者 403
-            // 行业惯例通常报 404，装作这篇文章不存在，防止别人套取信息
             throw new ResourceNotFoundException("Article not found");
         }
-        if(currentUser != null) {
+        if (currentUser != null) {
             historyService.recordHistoryAsync(currentUser, article);
-            updateUserInterestAsync(currentUser,article.getId());
+            updateUserInterestAsync(currentUser, article.getId());
         }
 
         return buildArticleResponse(article, currentUser);
@@ -370,7 +363,6 @@ public class ArticleService {
     @CacheEvict(value = "articles", key = "#slug")
     @Transactional
     public ArticleResponse updateArticle(String slug, UpdateArticleRequest request, UserDetails currentUserDetails) {
-        // 1. 查找实体并进行权限校验
         Article article = findArticleBySlug(slug);
         User currentUser = findUserById(Long.valueOf(currentUserDetails.getUsername()));
 
@@ -378,64 +370,49 @@ public class ArticleService {
             throw new AccessDeniedException("You are not the author of this article.");
         }
 
-        // 2. [快照] 保存更新前的所有图片URL，用于后续对比
-        List<String> oldUrls = extractAllUrls(
-                article.getBody(),
-                article.getCoverImageUrl()
-        );
+        List<String> oldUrls = extractAllUrls(article.getBody(), article.getCoverImageUrl());
 
-        // 3. [转正] 处理新上传的临时图片
         List<String> newTempUrls = extractTempUrls(
                 request.article().body(),
                 request.article().coverImageUrl()
         );
         Map<String, String> urlMapping = fileStorageService.promoteFiles(newTempUrls);
 
-        // 4. [更新实体] 将请求中的数据更新到article对象
-        // a. 处理标题和Slug
         if (request.article().title() != null && !request.article().title().equals(article.getTitle())) {
             article.setTitle(request.article().title());
             article.setSlug(generateUniqueSlug(request.article().title()));
         }
-        // b. 处理描述
         if (request.article().description() != null) {
             article.setDescription(request.article().description());
         }
-        // c. 处理正文，并将临时URL替换为永久URL
         if (request.article().body() != null) {
             String finalBody = replaceUrls(request.article().body(), urlMapping);
             article.setBody(finalBody);
         }
-        // d. 处理封面图，并将临时URL替换为永久URL
         if (request.article().coverImageUrl() != null) {
             String finalCoverUrl = replaceUrls(request.article().coverImageUrl(), urlMapping);
             article.setCoverImageUrl(finalCoverUrl);
         }
 
-        // 5. [保存] 将更新后的文章保存到数据库
         Article updatedArticle = articleRepository.save(article);
 
-        // 6. [对比与清理] 计算出被删除的URL，并提交异步删除任务
-        List<String> newUrls = extractAllUrls(
-                updatedArticle.getBody(),
-                updatedArticle.getCoverImageUrl()
-        );
-
-        oldUrls.removeAll(newUrls); // 计算差集，剩下的是需要被删除的孤儿URL
+        List<String> newUrls = extractAllUrls(updatedArticle.getBody(), updatedArticle.getCoverImageUrl());
+        oldUrls.removeAll(newUrls);
 
         if (!oldUrls.isEmpty()) {
             fileStorageService.deleteFilesAsync(oldUrls);
         }
 
-        // 7. [返回] 构建并返回最终的响应
         return buildArticleResponse(updatedArticle, currentUser);
     }
 
-    //注意，这个是类似b站的返回多篇文章的简要，所以一些信息没有
+    // ==============================================================
+    // 改动 2: getArticles
+    // 逻辑：Specification 查找 -> 投影化 (Spring Data JPA Fluent API)
+    //       -> 批量查点赞状态 -> 构建 SimpleResponse
+    // ==============================================================
     @Transactional(readOnly = true)
     public MultipleArticlesResponse getArticles(String tag, String author, String favoritedBy, Pageable pageable) {
-
-        // 1. 构建动态查询条件 (Specification)
         Specification<Article> spec = (root, query, criteriaBuilder) -> criteriaBuilder.conjunction();
         spec = spec.and(statusIsPublished());
         if (tag != null && !tag.isBlank()) {
@@ -448,39 +425,72 @@ public class ArticleService {
             spec = spec.and(favoritedBy(favoritedBy));
         }
 
-        Page<Article> articlePage = articleRepository.findAll(spec, pageable);
+        // --- NEW: 使用 repository.findBy + 投影转换，而不是 findAll ---
+        // 这样数据库层面就只会 Select ID, Title, Description, Image... 忽略 Body
+        Page<ArticleSimpleView> viewPage = articleRepository.findBy(spec, q -> q.as(ArticleSimpleView.class).page(pageable));
 
-        List<ArticleResponse.ArticleDto> articleDtos = articlePage.getContent().stream()
-                .map(article -> buildArticleResponseSimply(article).article())
+        if (viewPage.isEmpty()) {
+            return new MultipleArticlesResponse(List.of(), 0);
+        }
+
+        // 获取当前用户上下文用于查点赞
+        // 注意：Controller 这一层没传 currentUser 进这个方法，这里假设如果是公共接口不传user，或者 SecurityContextHolder 自行获取
+        // 为了安全起见，我们查看 getFeed 等都有 user，这里如果没有传，我们可以尝试获取，或默认为空
+        // (修正: 保持参数一致性，这里假设是匿名或由外部传入，若Service签名不可变且未传入user，则默认 isFavorited=false)
+        // 假设通过 Security Context 拿
+        Long currentUserId = null;
+        try {
+            String username = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication().getName();
+            if (!"anonymousUser".equals(username)) {
+                currentUserId = Long.valueOf(username);
+            }
+        } catch (Exception ignored) {}
+
+        // 批量查询点赞状态
+        Set<Long> likedIds = (currentUserId == null)
+                ? Collections.emptySet()
+                : checkLikedIds(viewPage.getContent().stream().map(ArticleSimpleView::getId).toList(), currentUserId);
+
+        List<ArticleResponse.ArticleDto> articleDtos = viewPage.getContent().stream()
+                .map(view -> buildArticleResponseSimply(view, likedIds.contains(view.getId())).article())
                 .collect(Collectors.toList());
 
-        return new MultipleArticlesResponse(articleDtos, articlePage.getTotalElements());
+        return new MultipleArticlesResponse(articleDtos, viewPage.getTotalElements());
     }
 
 
-
-    //同时，简要信息
+    // ==============================================================
+    // 改动 3: getFeedArticles
+    // 逻辑：查找 Repository 定义的投影方法
+    // ==============================================================
     @Transactional(readOnly = true)
     public MultipleArticlesResponse getFeedArticles(Pageable pageable, UserDetails currentUserDetails) {
         User currentUser = findUserById(Long.valueOf(currentUserDetails.getUsername()));
 
         List<User> followedUsers = List.copyOf(currentUser.getFollowing());
         if (followedUsers.isEmpty()) {
-
             return new MultipleArticlesResponse(List.of(), 0);
         }
 
-        Page<Article> articlePage = articleRepository.findByAuthorInAndStatusOrderByCreatedAtDesc(
+        // --- NEW: 调用 Repository 中返回 Page<ArticleSimpleView> 的方法 ---
+        Page<ArticleSimpleView> viewPage = articleRepository.findByAuthorInAndStatusOrderByCreatedAtDesc(
                 followedUsers,
-                Article.ArticleStatus.PUBLISHED, // <--- 关键参数
+                Article.ArticleStatus.PUBLISHED,
                 pageable
         );
 
-        List<ArticleResponse.ArticleDto> articleDtos = articlePage.getContent().stream()
-                .map(article -> buildArticleResponseSimply(article).article())
+        if (viewPage.isEmpty()) {
+            return new MultipleArticlesResponse(List.of(), 0);
+        }
+
+        // 批量查点赞
+        Set<Long> likedIds = checkLikedIds(viewPage.getContent().stream().map(ArticleSimpleView::getId).toList(), currentUser.getId());
+
+        List<ArticleResponse.ArticleDto> articleDtos = viewPage.getContent().stream()
+                .map(view -> buildArticleResponseSimply(view, likedIds.contains(view.getId())).article())
                 .collect(Collectors.toList());
 
-        return new MultipleArticlesResponse(articleDtos, articlePage.getTotalElements());
+        return new MultipleArticlesResponse(articleDtos, viewPage.getTotalElements());
     }
 
     private Specification<Article> hasTag(String tagName) {
@@ -499,10 +509,7 @@ public class ArticleService {
 
     private Specification<Article> favoritedBy(String username) {
         return (root, query, criteriaBuilder) -> {
-
             Join<Article, User> favoritedByJoin = root.join("favoritedBy");
-
-
             return criteriaBuilder.equal(favoritedByJoin.get("username"), username);
         };
     }
@@ -512,14 +519,6 @@ public class ArticleService {
                 criteriaBuilder.equal(root.get("status"), Article.ArticleStatus.PUBLISHED);
     }
 
-    private Specification<Article> favoriting(UserDetails currentUserDetails) {
-        return (root, query, criteriaBuilder) -> {
-
-            Join<Article, User> favoritedByJoin = root.join("favoritedBy");
-
-            return criteriaBuilder.equal(favoritedByJoin.get("id"), currentUserDetails.getUsername());
-        };
-    }
 
     private List<String> extractTempUrlsFromMarkdown(String markdown) {
         if (markdown == null || markdown.isEmpty()) {
@@ -553,7 +552,7 @@ public class ArticleService {
         }
         List<String> urls = new ArrayList<>();
         for (String text : texts) {
-            if(text == null || text.isEmpty()) continue;
+            if (text == null || text.isEmpty()) continue;
             Matcher matcher = URL_PATTERN.matcher(text);
             while (matcher.find()) {
                 urls.add(matcher.group());
@@ -561,6 +560,7 @@ public class ArticleService {
         }
         return urls;
     }
+
     private List<String> extractTempUrls(String body, String coverUrl) {
         return extractUrls(body, coverUrl).stream()
                 .filter(url -> url.contains("/uploads/temp/"))
@@ -568,11 +568,9 @@ public class ArticleService {
     }
 
 
-    @Async // 异步更新画像，不阻塞
+    @Async
     public void updateUserInterestAsync(User user, Long articleId) {
-        // 从 ES 捞出文章的向量 (因为 DB 里没存向量，ES 查得快)
         ArticleDocument doc = esArticleRepository.findById(articleId).orElse(null);
-
         if (user != null && doc != null && doc.getEmbeddingVector() != null) {
             String newVecStr = userService.updateUserEmbedding(user.getEmbeddingVector(), doc.getEmbeddingVector());
             user.setEmbeddingVector(newVecStr);
@@ -582,71 +580,72 @@ public class ArticleService {
 
     @Transactional(readOnly = true)
     public MultipleArticlesResponse getRecommendedFeed(UserDetails currentUserDetails) {
-        // 1. 捞用户画像 (从 DB/Redis)
-        User user = currentUserDetails==null?null:findUserById(Long.valueOf(currentUserDetails.getUsername()));
-        if (user == null) return getArticles(null,null,null, PageRequest.of(0, 16));
+        User user = currentUserDetails == null ? null : findUserById(Long.valueOf(currentUserDetails.getUsername()));
 
-        // 2. 解析 Vector 字符串 -> float[]
+        // 注意：getArticles 我们也已经改成了使用 Projection 的版本，所以冷启动这里的逻辑是复用了优化
+        if (user == null) return getArticles(null, null, null, PageRequest.of(0, 16));
+
         float[] userVector = parseEmbeddingString(user.getEmbeddingVector());
 
-        // 3. 冷启动处理 (如果是新用户，没向量) -> 返回最新发布文章
         if (userVector == null) {
-
-            return getArticles(null,null,null,PageRequest.of(0, 16));
+            return getArticles(null, null, null, PageRequest.of(0, 16));
         }
 
-        // 4. 调用 ES 推荐算法 (拿回 ID 列表)
         List<Long> ids = recommendationService.recommendForUser(userVector, 16);
 
-        // 5. 根据 ID 回捞数据并组装
-        List<ArticleResponse.ArticleDto> dtos = fetchArticlesByIdsAndPreserveOrder(ids, user);
+        // --- NEW: 使用通用方法 fetching Projections 而非 Entity ---
+        List<ArticleResponse.ArticleDto> dtos = fetchViewsByIdsAndPreserveOrder(ids, user);
 
         return new MultipleArticlesResponse(dtos, dtos.size());
     }
 
-    // ---------------------------------------------
-    // 函数 2: 获取相关文章 (看了又看)
-    // ---------------------------------------------
     @Transactional(readOnly = true)
     public MultipleArticlesResponse getRelatedArticles(String currentArticleSlug, UserDetails currentUserDetails) {
         User user = findUserById(Long.valueOf(currentUserDetails.getUsername()));
-
-        // 1. 先去 ES 找当前这篇文章的 Document (目的是拿到它的向量)
         ArticleDocument sourceDoc = esArticleRepository.findBySlug(currentArticleSlug);
 
         if (sourceDoc == null || sourceDoc.getEmbeddingVector() == null) {
             return new MultipleArticlesResponse(Collections.emptyList(), 0);
         }
 
-        // 2. 调用 ES 混合检索 (拿回 ID 列表)
         List<Long> ids = recommendationService.getRelatedArticles(sourceDoc, 6);
 
-        // 3. 组装数据
-        List<ArticleResponse.ArticleDto> dtos = fetchArticlesByIdsAndPreserveOrder(ids, user);
+        // --- NEW: 使用通用方法 fetching Projections 而非 Entity ---
+        List<ArticleResponse.ArticleDto> dtos = fetchViewsByIdsAndPreserveOrder(ids, user);
 
         return new MultipleArticlesResponse(dtos, dtos.size());
     }
 
-    // --- 内部通用私有方法：按ID取文章并保持 ES 给的顺序 ---
-    private List<ArticleResponse.ArticleDto> fetchArticlesByIdsAndPreserveOrder(List<Long> ids, User currentUser) {
+    // --- Helper 1: 按ID列表顺序 获取 Projections 并 填充点赞状态 ---
+    // 这个方法非常重要，处理了 Recommendation 和 Search 的优化逻辑
+    private List<ArticleResponse.ArticleDto> fetchViewsByIdsAndPreserveOrder(List<Long> ids, User currentUser) {
         if (ids.isEmpty()) return Collections.emptyList();
 
-        // MySql IN Query
-        List<Article> articles = articleRepository.findAllById(ids);
+        // 1. 特殊查找方法：findProjectedByIdIn (Repository需支持)
+        List<ArticleSimpleView> views = articleRepository.findProjectedByIdIn(ids);
 
-        // List -> Map 为了O(1)查找
-        Map<Long, Article> map = articles.stream()
-                .collect(Collectors.toMap(Article::getId, Function.identity()));
+        // 2. 转 Map 方便 O(1) 取用
+        Map<Long, ArticleSimpleView> map = views.stream()
+                .collect(Collectors.toMap(ArticleSimpleView::getId, Function.identity()));
 
-        // 按 ids 的顺序（因为ids的顺序就是推荐分数的顺序）重组 List
+        // 3. 批量查当前用户的点赞状态 (解决 N+1 问题)
+        Set<Long> likedIds = (currentUser == null) ? Collections.emptySet()
+                : checkLikedIds(ids, currentUser.getId());
+
+        // 4. 重组顺序，转换为 Response DTO
         return ids.stream()
                 .map(map::get)
-                .filter(Objects::nonNull) // 防御性判空
-                .map(article -> buildArticleResponse(article, currentUser).article())
+                .filter(Objects::nonNull)
+                .map(view -> buildArticleResponseSimply(view, likedIds.contains(view.getId())).article())
                 .collect(Collectors.toList());
     }
 
-    // 工具: String "0.1,0.2..." -> float[]
+    // --- Helper 2: 封装批量查点赞的 Repository 调用 ---
+    private Set<Long> checkLikedIds(List<Long> articleIds, Long userId) {
+        if (articleIds.isEmpty() || userId == null) return Collections.emptySet();
+        return articleRepository.findLikedArticleIds(userId, articleIds);
+    }
+
     private float[] parseEmbeddingString(String str) {
         if (str == null || str.isBlank()) return null;
         String[] parts = str.split(",");

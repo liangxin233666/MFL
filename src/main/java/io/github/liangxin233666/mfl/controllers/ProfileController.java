@@ -40,4 +40,6 @@ public class ProfileController {
         ProfileResponse profileResponse = profileService.unfollowUser(username, currentUser);
         return ResponseEntity.ok(profileResponse);
     }
+
+
 }

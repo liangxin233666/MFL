@@ -20,22 +20,14 @@ public class GeminiService {
     private static final String MODEL_NAME = "gemini-2.5-flash-lite"; // 追求速度就用 flash
     private static final String EMBEDDING_MODEL = "gemini-embedding-001";
     private final String apiKey;
+    private final Client client;
 
     public GeminiService(@Value("${gemini.api.key}") String apiKey, ObjectMapper objectMapper) {
         this.apiKey = apiKey;
         this.objectMapper = objectMapper;
-
+        this.client = Client.builder().apiKey(this.apiKey).build();
     }
 
-    // 获取 Client 的辅助方法
-    private Client getClient() {
-        // 这里的 builder 创建开销很小。
-        // 在本地代理不稳定的情况下，每次 new 一个能有效避免 "僵尸连接" 问题
-        return Client.builder()
-                .apiKey(apiKey)
-                // 如果 SDK 支持设置超时，请务必在这里设置，例如 .connectTimeout(...)
-                .build();
-    }
 
     /**
      * 定义一个内部 Record 来承载审核结果（从 AI 返回的 JSON 解析而来）
@@ -99,17 +91,8 @@ public class GeminiService {
         """.formatted(title, body.length() > 4000 ? body.substring(0, 4000) : body);
 
         try {
-            System.setProperty("http.keepAlive", "false");
-            System.setProperty("https.keepAlive", "false");
 
-            // 2. 重新设置代理 (防止被其他线程覆盖)
-            System.setProperty("http.proxyHost", "127.0.0.1");
-            System.setProperty("http.proxyPort", "20085");
-            System.setProperty("https.proxyHost", "127.0.0.1");
-            System.setProperty("https.proxyPort", "20085");
 
-            // 3. 每次请求 New 一个 Client (不要用成员变量)
-            Client client = Client.builder().apiKey(apiKey).build();
 
             // 2. 调用 SDK！就是这么简单！
             GenerateContentResponse response = client.models.generateContent(
@@ -149,7 +132,7 @@ public class GeminiService {
         }
 
         try {
-            Client client = getClient();
+
 
             // 1. 配置：指定输出维度 768
             EmbedContentConfig config = EmbedContentConfig.builder()

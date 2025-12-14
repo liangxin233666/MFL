@@ -13,9 +13,9 @@ public class WebConfig {
     public PageableHandlerMethodArgumentResolverCustomizer pageableResolverCustomizer() {
         return (resolver) -> {
             // 将 "offset" 参数名设置为偏移量
-            resolver.setPageParameterName("offset");
+            resolver.setPageParameterName("page");
             // 将 "limit" 参数名设置为页面大小
-            resolver.setSizeParameterName("limit");
+            resolver.setSizeParameterName("size");
 
             // 设置一个合理的最大页面大小，防止恶意请求
             resolver.setMaxPageSize(60);

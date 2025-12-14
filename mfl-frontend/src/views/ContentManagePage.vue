@@ -15,61 +15,95 @@ const authStore = useAuthStore();
 const articles = ref<Article[]>([]);
 const isLoading = ref(false);
 
+// 新增翻页相关状态
+const page = ref(0); // 当前页码，Spring 从 0 开始
+const size = ref(20);
+const hasMore = ref(true); // 是否还有更多数据
+const isLoadingMore = ref(false); // 翻页时的加载状态，避免全屏 loading
+let articlesCount = ref(0);
+
+
 // 筛选与排序状态
-const filterType = ref('all'); // 'all', 'draft'(暂未实现)
+const filterType = ref('all');
 const sortType = ref<'date' | 'views' | 'likes'>('date');
 
-const fetchMyArticles = async () => {
+/**
+ * 获取文章数据
+ * @param isAppend 是否为追加模式（翻页）
+ */
+const fetchMyArticles = async (isAppend = false) => {
   if (!authStore.user) return;
 
-  isLoading.value = true;
+  // 如果不是追加模式（即初始加载或切换排序），重置状态并开启主Loading
+  if (!isAppend) {
+    isLoading.value = true;
+    page.value = 0; // 重置页码
+    hasMore.value = true;
+  } else {
+    isLoadingMore.value = true;
+  }
+
   try {
-    // 1. 根据前端的 sortType 决定传给后端的 sort 字符串
-    // Spring 的格式通常是: "字段名,desc" (降序) 或 "字段名,asc" (升序)
-    let sortParam = 'createdAt,desc'; // 默认：时间倒序
+    let sortParam = 'createdAt,desc';
     if (sortType.value === 'likes') {
-      sortParam = 'favoritesCount,desc'; // 收藏数倒序
+      sortParam = 'favoritesCount,desc';
     }
 
-    // 2. 发送请求
-    // 注意：limit 改成了 size
-    const response = await apiClient.get<{ articles: Article[] }>('/articles', {
+    const response = await apiClient.get('/articles', {
       params: {
         author: authStore.user.username,
-        size: 20,     // <--- 改正：Spring Pageable 用 size
-        page: 0,      // (可选) 如果要做翻页，这里动态传 currentPage
-        sort: sortParam // <--- 新增：利用 Pageable 的排序功能
+        size: size.value,
+        page: page.value, // 使用当前页码
+        sort: sortParam
       }
     });
 
-    // 3. 直接赋值，不需要前端 sort 了
-    articles.value = response.data.articles;
+    const newArticles = response.data.articles;
+    articlesCount.value=response.data.articlesCount;
+
+    if (articles.value.length == articlesCount.value||articles.value.length >articlesCount.value) {
+      hasMore.value = false;
+    }
+
+    // 根据模式决定是覆盖还是追加
+    if (isAppend) {
+      articles.value.push(...newArticles);
+    } else {
+      articles.value = newArticles;
+    }
 
   } catch (error) {
     console.error("获取稿件失败", error);
   } finally {
     isLoading.value = false;
+    isLoadingMore.value = false;
   }
+};
+
+// 点击“加载更多”
+const loadMore = () => {
+  if (!hasMore.value || isLoadingMore.value) return;
+  page.value++ // 页码 +1
+  fetchMyArticles(true); // 开启追加模式
 };
 
 // 删除逻辑
 const handleDelete = async (slug: string) => {
   try {
     await apiClient.delete(`/articles/${slug}`);
-    // 删除成功后，从列表中移除
     articles.value = articles.value.filter(a => a.slug !== slug);
   } catch (error) {
     alert('删除失败');
   }
 };
 
-// 监听排序变化，重新获取或重新排序
+// 监听排序变化：切换排序属于重置操作
 watch(sortType, () => {
-  fetchMyArticles();
+  fetchMyArticles(false);
 });
 
 onMounted(() => {
-  fetchMyArticles();
+  fetchMyArticles(false);
 });
 </script>
 
@@ -87,7 +121,6 @@ onMounted(() => {
           <ul class="menu w-full p-2">
             <li><a class="active bg-pink-50 text-pink-500 hover:bg-pink-100 font-bold"><DocumentTextIcon class="w-5 h-5"/> 稿件管理</a></li>
             <li><a class="text-base-content/70"><span class="w-5"></span> 申诉管理</a></li>
-            <li><a class="text-base-content/70"><span class="w-5"></span> 字幕管理</a></li>
             <div class="divider my-1"></div>
             <li><a class="text-base-content/70">数据中心</a></li>
             <li><a class="text-base-content/70">粉丝管理</a></li>
@@ -103,7 +136,7 @@ onMounted(() => {
             <div class="p-4 border-b flex flex-col sm:flex-row justify-between items-center gap-4">
               <!-- Tab -->
               <div class="tabs tabs-boxed bg-transparent p-0">
-                <a class="tab tab-lg" :class="{'tab-active text-pink-500 !bg-transparent border-b-2 border-pink-500 rounded-none': filterType === 'all'}" @click="filterType = 'all'">全部稿件 <span class="text-xs ml-1 bg-base-200 px-1 rounded-full text-base-content/50">{{ articles.length }}</span></a>
+                <a class="tab tab-lg" :class="{'tab-active text-pink-500 !bg-transparent border-b-2 border-pink-500 rounded-none': filterType === 'all'}" @click="filterType = 'all'">全部稿件 <span class="text-xs ml-1 bg-base-200 px-1 rounded-full text-base-content/50"></span></a>
                 <a class="tab tab-lg" :class="{'tab-active': filterType === 'draft'}">草稿箱 <span class="text-xs ml-1 bg-base-200 px-1 rounded-full text-base-content/50">0</span></a>
               </div>
 
@@ -136,6 +169,22 @@ onMounted(() => {
                   :article="article"
                   @delete="handleDelete"
               />
+
+              <!-- 翻页/加载更多 区域 -->
+              <div class="p-6 flex justify-center border-t border-base-200 bg-base-50/50">
+                <button
+                    v-if="hasMore"
+                    @click="loadMore"
+                    :disabled="isLoadingMore"
+                    class="btn btn-outline btn-primary btn-sm min-w-[120px]"
+                >
+                  <span v-if="isLoadingMore" class="loading loading-spinner loading-xs"></span>
+                  {{ isLoadingMore ? '加载中...' : '加载更多' }}
+                </button>
+                <div v-else class="text-xs text-base-content/50 mt-2">
+                  没有更多稿件了
+                </div>
+              </div>
             </div>
 
             <div v-else class="flex flex-col items-center justify-center py-20 text-base-content/40">

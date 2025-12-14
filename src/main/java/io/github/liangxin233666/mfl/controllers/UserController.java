@@ -1,11 +1,10 @@
 package io.github.liangxin233666.mfl.controllers;
 
-import io.github.liangxin233666.mfl.dtos.LoginUserRequest;
-import io.github.liangxin233666.mfl.dtos.NewUserRequest;
-import io.github.liangxin233666.mfl.dtos.UpdateUserRequest;
-import io.github.liangxin233666.mfl.dtos.UserResponse;
+import io.github.liangxin233666.mfl.dtos.*;
 import io.github.liangxin233666.mfl.services.UserService;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -38,5 +37,20 @@ public class UserController {
     public ResponseEntity<UserResponse> updateUser(@Valid @RequestBody UpdateUserRequest request,@AuthenticationPrincipal UserDetails currentUser) {
         UserResponse userResponse=userService.updateCurrentUser(request,currentUser);
         return ResponseEntity.ok(userResponse);
+    }
+    @GetMapping("/following")
+    public ResponseEntity<MultipleProfilesResponse> getMyFollowing(
+            @PageableDefault Pageable pageable,
+            @AuthenticationPrincipal UserDetails currentUser) {
+        MultipleProfilesResponse response = userService.getMyFollowing(pageable, currentUser);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/followers")
+    public ResponseEntity<MultipleProfilesResponse> getMyFollowers(
+            @PageableDefault Pageable pageable,
+            @AuthenticationPrincipal UserDetails currentUser) {
+        MultipleProfilesResponse response = userService.getMyFollowers(pageable, currentUser);
+        return ResponseEntity.ok(response);
     }
 }

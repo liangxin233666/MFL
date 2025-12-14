@@ -2,11 +2,10 @@
 import { ref, onMounted, computed, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
-import { PlusIcon, CheckIcon } from '@heroicons/vue/24/solid';
+import { PlusIcon, CheckIcon,UserGroupIcon, UsersIcon, XMarkIcon } from '@heroicons/vue/24/solid';
 import apiClient from '../api/apiClient';
-import type { Profile, Article } from '../types/api';
+import type {Profile, Article, MultipleProfilesResponse} from '../types/api';
 import ArticlePreview from '../components/ArticlePreview.vue';
-import router from "../router";
 import { ASSETS } from '../config/assets';
 
 // 1. --- 初始化状态和路由 ---
@@ -22,6 +21,14 @@ const activeTab = ref<'author' | 'favorited'>(
 const isLoadingProfile = ref(true);
 const isLoadingArticles = ref(false);
 const isFollowing = ref(false);
+
+
+const showListModal = ref(false);
+const listModalType = ref<'following' | 'followers'>('following');
+const connectionList = ref<Profile[]>([]);
+const isListLoading = ref(false);
+const listTotalCount = ref(0);
+const listPage = ref(0); // 列表分页
 
 const currentPage = ref(0);
 const articlesPerPage = 8; // 每页加载8篇文章
@@ -121,6 +128,74 @@ const toggleFollow = async () => {
   }
 };
 
+
+// --- 新增：列表交互逻辑 ---
+
+// 1. 打开弹窗并加载第一页
+const openConnectionList = async (type: 'following' | 'followers') => {
+  listModalType.value = type;
+  showListModal.value = true;
+  connectionList.value = [];
+  listPage.value = 0;
+  await fetchConnectionData(type, 0);
+};
+
+// 2. 调用后端接口 (对应 Controller: /api/users/following 或 /api/users/followers)
+const fetchConnectionData = async (type: 'following' | 'followers', page: number) => {
+  isListLoading.value = true;
+  // 注意：这里假设 apiClient 的 baseURL 已经包含了 /api
+  // 如果你的 baseURL 没包含 /api，请改为 `/api/users/${type}`
+  const endpoint = `/users/${type}`;
+
+  try {
+    const response = await apiClient.get<MultipleProfilesResponse>(`${endpoint}?page=${page}&size=10`);
+
+    if (page === 0) {
+      connectionList.value = response.data.profiles;
+    } else {
+      connectionList.value.push(...response.data.profiles);
+    }
+    listTotalCount.value = response.data.profilesCount;
+    listPage.value = page;
+  } catch (error) {
+    console.error("加载列表失败", error);
+  } finally {
+    isListLoading.value = false;
+  }
+};
+
+// 3. 列表加载更多
+const loadMoreConnections = () => {
+  if (connectionList.value.length < listTotalCount.value) {
+    fetchConnectionData(listModalType.value, listPage.value + 1);
+  }
+};
+
+// 4. 列表内的关注/取关 (带乐观更新)
+const toggleFollowInList = async (targetProfile: Profile) => {
+  if (!authStore.isAuthenticated) return;
+
+  const originalStatus = targetProfile.following;
+  // 乐观更新：先改界面
+  targetProfile.following = !originalStatus;
+
+  try {
+    if (originalStatus) {
+      // 原来是关注，现在取消
+      await apiClient.delete(`/profiles/${targetProfile.username}/follow`);
+    } else {
+      // 原来没关注，现在关注
+      await apiClient.post(`/profiles/${targetProfile.username}/follow`, {});
+    }
+  } catch (error) {
+    // 失败回滚
+    targetProfile.following = originalStatus;
+    alert('操作失败');
+  }
+};
+
+
+
 // 5. --- 生命周期钩子和侦听器 ---
 onMounted(async () => {
 
@@ -157,12 +232,25 @@ watch(profileUsername, async (newUsername) => {
         <div class="flex items-start gap-4">
           <div class="avatar -mt-16">
             <div class="w-24 h-24 rounded-full ring ring-pink-500 ring-offset-base-100 ring-offset-2">
-              <img :src="profile.image || ASSETS.defaults.avatarD" />
+              <img :src="profile.image || ASSETS.defaults.avatarD"  alt=""/>
             </div>
           </div>
           <div class="flex-grow">
             <h1 class="text-2xl font-bold">{{ profile.username }}</h1>
             <p class="text-sm text-base-content/70 mt-1">{{ profile.bio || '这位用户什么也没留下...' }}</p>
+
+            <!-- === 新增部分开始：只在看自己主页时显示 === -->
+            <div v-if="isOwnProfile" class="flex gap-4 mt-3">
+              <button @click="openConnectionList('following')" class="btn btn-sm btn-ghost gap-2 bg-base-200/50 hover:bg-base-200">
+                <UsersIcon class="w-4 h-4 text-pink-500"/>
+                我的关注
+              </button>
+              <button @click="openConnectionList('followers')" class="btn btn-sm btn-ghost gap-2 bg-base-200/50 hover:bg-base-200">
+                <UserGroupIcon class="w-4 h-4 text-pink-500"/>
+                我的粉丝
+              </button>
+            </div>
+
           </div>
           <div v-if="!isOwnProfile" class="self-start">
             <button
@@ -215,4 +303,81 @@ watch(profileUsername, async (newUsername) => {
     </div>
   </div>
   <div v-else class="text-center py-20 font-bold text-xl">用户不存在或加载失败</div>
+
+  <!-- === 新增部分开始：列表弹窗 === -->
+  <dialog class="modal modal-bottom sm:modal-middle" :class="{'modal-open': showListModal}">
+    <div class="modal-box relative">
+      <!-- 关闭按钮 -->
+      <button @click="showListModal = false" class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">
+        <XMarkIcon class="w-5 h-5"/>
+      </button>
+
+      <!-- 标题 -->
+      <h3 class="font-bold text-lg mb-4 flex items-baseline gap-2">
+        {{ listModalType === 'following' ? '我的关注' : '我的粉丝' }}
+        <span class="text-xs font-normal opacity-60">({{ listTotalCount }})</span>
+      </h3>
+
+      <!-- 列表区域 -->
+      <div class="min-h-[200px] max-h-[60vh] overflow-y-auto">
+
+        <!-- Loading 状态 -->
+        <div v-if="isListLoading && connectionList.length === 0" class="flex justify-center py-10">
+          <span class="loading loading-spinner text-pink-500"></span>
+        </div>
+
+        <!-- 空状态 -->
+        <div v-else-if="connectionList.length === 0" class="text-center py-10 text-base-content/60">
+          这里还空空的~
+        </div>
+
+        <!-- 用户列表 -->
+        <div v-else class="flex flex-col gap-2">
+          <div v-for="user in connectionList" :key="user.username" class="flex items-center justify-between p-2 hover:bg-base-200 rounded-lg transition-colors">
+
+            <!-- 用户信息 (点击跳转) -->
+            <a :href="`/profile/${user.username}`" @click="showListModal=false" class="flex items-center gap-3 overflow-hidden group">
+              <div class="avatar">
+                <div class="w-10 h-10 rounded-full">
+                  <img :src="user.image || ASSETS.defaults.avatarD"  alt=""/>
+                </div>
+              </div>
+              <span class="font-bold text-sm group-hover:text-pink-500 transition-colors">{{ user.username }}</span>
+            </a>
+
+            <!-- 列表内的关注/取关按钮 -->
+            <!-- 只有不是自己时才显示按钮 -->
+            <button
+                v-if="user.username !== authStore.user?.username"
+                class="btn btn-xs sm:btn-sm gap-1 ml-2 flex-shrink-0"
+                :class="user.following ? 'btn-outline' : 'btn-active btn-neutral'"
+                @click.stop="toggleFollowInList(user)"
+            >
+              <template v-if="user.following">
+                <span>已关注</span>
+              </template>
+              <template v-else>
+                <PlusIcon class="w-3 h-3"/>
+                <span>关注</span>
+              </template>
+            </button>
+          </div>
+
+          <!-- 列表底部加载更多 -->
+          <button v-if="connectionList.length < listTotalCount"
+                  class="btn btn-ghost btn-xs mt-4 w-full"
+                  @click="loadMoreConnections"
+                  :disabled="isListLoading">
+            {{ isListLoading ? '加载中...' : '加载更多' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 点击背景关闭 -->
+    <form method="dialog" class="modal-backdrop">
+      <button @click="showListModal = false">close</button>
+    </form>
+  </dialog>
+  
 </template>

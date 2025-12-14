@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { EyeIcon, ChatBubbleOvalLeftEllipsisIcon,StarIcon } from '@heroicons/vue/24/solid';
+import { ChatBubbleOvalLeftEllipsisIcon,StarIcon } from '@heroicons/vue/24/solid';
 import type { Profile } from '../types/api'; // **改动**: 引入 Profile 类型
 import UserInfo from './UserInfo.vue';       // **改动**: 导入 UserInfo 组件
 

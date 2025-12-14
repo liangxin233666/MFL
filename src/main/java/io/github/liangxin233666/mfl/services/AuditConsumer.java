@@ -9,6 +9,7 @@ import io.github.liangxin233666.mfl.events.NotificationEvent;
 import io.github.liangxin233666.mfl.repositories.ArticleRepository;
 import io.github.liangxin233666.mfl.repositories.es.EsArticleRepository;
 import io.github.liangxin233666.mfl.services.gemini.GeminiService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -22,6 +23,7 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class AuditConsumer {
 
     private final ArticleRepository articleRepository;
@@ -32,67 +34,49 @@ public class AuditConsumer {
     private final RabbitTemplate rabbitTemplate;
     private static final Long SYSTEM_ACTOR_ID = 1L;
 
-    public AuditConsumer(ArticleRepository articleRepository, EsArticleRepository esArticleRepository, GeminiService geminiService, NotificationProducer notificationProducer,TransactionTemplate transactionTemplate, RabbitTemplate rabbitTemplate) {
-        this.articleRepository = articleRepository;
-        this.esArticleRepository = esArticleRepository;
-        this.geminiService = geminiService;
-        this.notificationProducer = notificationProducer;
-        this.transactionTemplate = transactionTemplate;
-        this.rabbitTemplate = rabbitTemplate;
-    }
 
-    @RabbitListener(queues = RabbitMqAuditConfig.AUDIT_QUEUE)
+    @RabbitListener(id = RabbitMqAuditConfig.AUDIT_LISTENER_ID, queues = RabbitMqAuditConfig.AUDIT_QUEUE)
     public void processArticleAudit(Long articleId) {
         log.info("开始审核文章 ID: {}", articleId);
-
-        // 1. 从 DB 捞出文章
         Article article = articleRepository.findById(articleId).orElse(null);
+
+        // 简单的重试机制
         if (article == null) {
-            try {
-                Thread.sleep(500); // 等500毫秒让主事务提交
-                article = articleRepository.findById(articleId).orElse(null);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
+            try { Thread.sleep(500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            article = articleRepository.findById(articleId).orElse(null);
         }
 
         if (article == null) {
-            log.warn("文章 ID {} 未找到，可能已被删除或事务未提交", articleId);
+            log.warn("文章 ID {} 未找到，跳过", articleId);
             return;
         }
 
         try {
-            // 2. 召唤 AI
             GeminiService.AnalysisResult result = geminiService.auditArticle(article.getTitle(), article.getBody(), null);
-
             log.info("AI 审核结果: {}", result);
 
             if (result.approved()) {
                 AuditPassedEvent nextStepEvent = new AuditPassedEvent(articleId, result);
-
                 rabbitTemplate.convertAndSend(RabbitMqAuditConfig.VECTOR_SAVE_QUEUE, nextStepEvent);
-                log.info("阶段1-审核: 通过，已转发至向量队列");
-
             } else {
                 transactionTemplate.execute(status -> {
                     saveRejectedResult(articleId, result.reason());
                     return null;
                 });
             }
-
-
         } catch (Exception e) {
-            log.error("阶段1-审核: 出错，RabbitMQ将重试此阶段", e);
-            throw e; // 抛出异常，触发审核重试
+            log.error("审核异常，将重试", e);
+            throw e;
         }
     }
+
 
     @RabbitListener(queues = RabbitMqAuditConfig.VECTOR_SAVE_QUEUE)
     public void processVectorAndSave(AuditPassedEvent event) {
         log.info("阶段2-向量: 开始处理文章 ID: {}", event.articleId());
 
         // 1. 重新查询文章 (此时必须要 Tags 了，为了生成向量)
-        Article article = articleRepository.findById(event.articleId()).orElse(null);
+        Article article = articleRepository.findByIdWithTagsAndAuthor(event.articleId()).orElse(null);
 
         // 防御性编程：可能审核期间文章被删了
         if (article == null) {
@@ -159,9 +143,11 @@ public class AuditConsumer {
 
     public void saveApprovedResult(Long articleId, GeminiService.AnalysisResult result, float[] vector) {
         // 重新 fetch 一次，确保数据最新（虽然大部分情况可以直接用）
-        Article article = articleRepository.findById(articleId).orElseThrow();
+        Article article = articleRepository.findByIdWithTagsAndAuthor(articleId).orElseThrow();
         article.setStatus(Article.ArticleStatus.PUBLISHED);
         articleRepository.save(article);
+
+        log.info("aaaaaaaaaaaaaa");
 
         // 构建 ES 文档逻辑保持不变
         ArticleDocument doc = ArticleDocument.builder()

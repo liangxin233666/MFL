@@ -73,7 +73,7 @@ const handleLogout = () => {
 
         <div class="navbar-start">
           <router-link to="/" class="btn btn-ghost text-2xl font-black normal-case text-pink-500 hover:bg-transparent">
-            RealWorld
+            Synapse
           </router-link>
         </div>
 

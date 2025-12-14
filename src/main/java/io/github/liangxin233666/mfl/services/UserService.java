@@ -1,23 +1,26 @@
 package io.github.liangxin233666.mfl.services;
 
-import io.github.liangxin233666.mfl.dtos.LoginUserRequest;
-import io.github.liangxin233666.mfl.dtos.NewUserRequest;
-import io.github.liangxin233666.mfl.dtos.UserResponse;
+import io.github.liangxin233666.mfl.dtos.*;
 import io.github.liangxin233666.mfl.entities.User;
 import io.github.liangxin233666.mfl.exceptions.ResourceNotFoundException;
 import io.github.liangxin233666.mfl.repositories.UserRepository;
+import io.github.liangxin233666.mfl.repositories.projections.UserSimpleView;
 import jakarta.validation.Valid;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.domain.Page;
 import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
+
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import io.github.liangxin233666.mfl.dtos.UpdateUserRequest;
 
+import org.springframework.data.domain.Pageable;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class UserService {
@@ -26,14 +29,16 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final FileStorageService fileStorageService;
+    private final GlobalTrendManager globalTrendManager;
 
 
     // 使用构造器注入所有依赖
-    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService, FileStorageService fileStorageService) {
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService, FileStorageService fileStorageService, GlobalTrendManager globalTrendManager) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.fileStorageService = fileStorageService;
+        this.globalTrendManager = globalTrendManager;
     }
 
     @Transactional
@@ -51,6 +56,7 @@ public class UserService {
         newUser.setEmail(request.user().email());
         // 使用BCrypt加密密码
         newUser.setPassword(passwordEncoder.encode(request.user().password()));
+        newUser.setEmbeddingVector(serializeEmbedding(globalTrendManager.getGlobalHotVector()));
 
         User savedUser = userRepository.save(newUser);
 
@@ -98,6 +104,57 @@ public class UserService {
 
         return buildUserResponse(user, token);
     }
+
+    @Transactional(readOnly = true)
+    public MultipleProfilesResponse getMyFollowing(Pageable pageable, UserDetails currentUserDetails) {
+        Long currentUserId = Long.valueOf(currentUserDetails.getUsername());
+
+        // 查询我关注的人
+        Page<UserSimpleView> page = userRepository.findFollowingByUserId(currentUserId, pageable);
+
+        List<ProfileResponse.ProfileDto> profiles = page.getContent().stream()
+                .map(view -> new ProfileResponse.ProfileDto(
+                        view.getUsername(),
+                        null, // bio 设为 null
+                        view.getImage(),
+                        true // 既然在"我关注的人"列表中，following 必然为 true
+                ))
+                .collect(Collectors.toList());
+
+        return new MultipleProfilesResponse(profiles, page.getTotalElements());
+    }
+
+    @Transactional(readOnly = true)
+    public MultipleProfilesResponse getMyFollowers(Pageable pageable, UserDetails currentUserDetails) {
+        Long currentUserId = Long.valueOf(currentUserDetails.getUsername());
+
+        // 查询关注我的人 (粉丝)
+        Page<UserSimpleView> page = userRepository.findFollowersByUserId(currentUserId, pageable);
+
+        if (page.isEmpty()) {
+            return new MultipleProfilesResponse(Collections.emptyList(), 0);
+        }
+
+        // 提取粉丝的 ID 列表
+        List<Long> followerIds = page.getContent().stream()
+                .map(UserSimpleView::getId)
+                .toList();
+
+        // 批量检查我是否关注了这些粉丝 (是否互关)
+        Set<Long> myFollowingIds = userRepository.checkFollowingStatus(currentUserId, followerIds);
+
+        List<ProfileResponse.ProfileDto> profiles = page.getContent().stream()
+                .map(view -> new ProfileResponse.ProfileDto(
+                        view.getUsername(),
+                        null, // bio 设为 null
+                        view.getImage(),
+                        myFollowingIds.contains(view.getId()) // 根据查询结果设置 true/false
+                ))
+                .collect(Collectors.toList());
+
+        return new MultipleProfilesResponse(profiles, page.getTotalElements());
+    }
+
 
     @Transactional
     @CacheEvict(cacheNames = {"profiles", "user-details", "users-current"}, key = "#currentUserDetails.username")
@@ -162,8 +219,21 @@ public class UserService {
 
         // 移动平均: 0.8 旧兴趣 + 0.2 新兴趣
         float alpha = 0.2f;
+        double sumSq = 0.0;
+
+        // 1. 更新
         for (int i = 0; i < oldVector.length; i++) {
             oldVector[i] = oldVector[i] * (1 - alpha) + newArticleVector[i] * alpha;
+            sumSq += oldVector[i] * oldVector[i];
+        }
+
+        // 2. 归一化 (L2 Normalize)
+        // 这一步保证向量模长始终为1，对于 Cosine 距离检索非常重要
+        float norm = (float) Math.sqrt(sumSq);
+        if (norm > 1e-6) { // 防止除以0
+            for (int i = 0; i < oldVector.length; i++) {
+                oldVector[i] /= norm;
+            }
         }
 
         return serializeEmbedding(oldVector);

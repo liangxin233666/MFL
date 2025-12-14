@@ -45,7 +45,7 @@ public class Article {
     )
     private Set<User> favoritedBy= new HashSet<>();
 
-    @ManyToMany(fetch = FetchType.EAGER)
+    @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
             name = "article_tags",
             joinColumns = @JoinColumn(name = "article_id"),

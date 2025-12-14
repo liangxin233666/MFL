@@ -118,3 +118,7 @@ export interface LocalPluginState {
     installedAt: number;
 }
 
+export interface MultipleProfilesResponse {
+    profiles: Profile[];
+    profilesCount: number;
+}
